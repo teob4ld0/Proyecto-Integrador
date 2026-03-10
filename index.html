@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Proyecto Integrador — soluciones modernas para tu empresa." />
+  <title>Proyecto Integrador</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ===================== NAVBAR ===================== -->
+  <nav class="navbar" id="navbar">
+    <div class="container nav-inner">
+      <a href="#" class="nav-logo">Proyecto<span>.</span></a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#features">Características</a></li>
+        <li><a href="#stats">Resultados</a></li>
+        <li><a href="#testimonials">Testimonios</a></li>
+        <li><a href="#contact" class="nav-cta">Comenzar</a></li>
+      </ul>
+
+      <button class="nav-toggle" id="navToggle" aria-label="Abrir menú" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge animate-fade-up">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        Nuevo · Proyecto Integrador 1.0
+      </div>
+
+      <h1 class="animate-fade-up delay-1">
+        Construye algo<br />
+        <span class="gradient-text">verdaderamente genial</span>
+      </h1>
+
+      <p class="animate-fade-up delay-2">
+        Una plataforma moderna, rápida y confiable para impulsar
+        el crecimiento de tu empresa con tecnología de primer nivel.
+      </p>
+
+      <div class="hero-actions animate-fade-up delay-3">
+        <a href="#features" class="btn btn-primary">
+          Explorar características
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </a>
+        <a href="#contact" class="btn btn-outline">Ver demo</a>
+      </div>
+
+      <!-- Fake browser preview -->
+      <div class="hero-preview animate-fade-up delay-3">
+        <div class="hero-preview-inner">
+          <div class="preview-bar">
+            <div class="preview-dot"></div>
+            <div class="preview-dot"></div>
+            <div class="preview-dot"></div>
+            <div class="preview-url"></div>
+          </div>
+          <div class="preview-body">
+            <div class="preview-sidebar">
+              <div class="preview-item active"></div>
+              <div class="preview-item"></div>
+              <div class="preview-item"></div>
+              <div class="preview-item"></div>
+              <div class="preview-item"></div>
+            </div>
+            <div class="preview-content">
+              <div class="preview-heading"></div>
+              <div class="preview-line"></div>
+              <div class="preview-line"></div>
+              <div class="preview-line"></div>
+              <div class="preview-line"></div>
+              <div class="preview-cards">
+                <div class="preview-card-mock"></div>
+                <div class="preview-card-mock"></div>
+                <div class="preview-card-mock"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TRUSTED BY ===================== -->
+  <section class="trusted">
+    <div class="container">
+      <p>Con la confianza de empresas líderes</p>
+      <div class="logo-row">
+        <span class="logo-item">Acme Corp</span>
+        <span class="logo-item">TechWave</span>
+        <span class="logo-item">Globex</span>
+        <span class="logo-item">Initech</span>
+        <span class="logo-item">Umbrella</span>
+        <span class="logo-item">Stark Inc</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FEATURES ===================== -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Características</span>
+        <h2>Todo lo que necesitas, <span class="gradient-text">en un solo lugar</span></h2>
+        <p>Herramientas potentes diseñadas para equipos modernos que quieren moverse rápido sin romper nada.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Alto rendimiento</h3>
+          <p>Infraestructura optimizada que garantiza respuestas ultra-rápidas sin importar el volumen de usuarios.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Seguridad robusta</h3>
+          <p>Cifrado de extremo a extremo, autenticación multifactor y auditorías de seguridad continuas.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Analítica en tiempo real</h3>
+          <p>Dashboards interactivos con métricas clave para tomar decisiones basadas en datos reales.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🤝</div>
+          <h3>Colaboración fluida</h3>
+          <p>Herramientas de equipo integradas para que todos trabajen sincronizados sin fricciones.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3>Escala global</h3>
+          <p>Despliega en múltiples regiones con CDN incorporada para una experiencia uniforme a nivel mundial.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔧</div>
+          <h3>Integración sencilla</h3>
+          <p>APIs limpias y SDKs para conectar con tus herramientas favoritas en cuestión de minutos.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== STATS ===================== -->
+  <section class="stats" id="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <h3 class="gradient-text">99.9%</h3>
+          <p>Disponibilidad garantizada</p>
+        </div>
+        <div class="stat-item">
+          <h3 class="gradient-text">+10k</h3>
+          <p>Empresas activas</p>
+        </div>
+        <div class="stat-item">
+          <h3 class="gradient-text">&lt;50ms</h3>
+          <p>Tiempo de respuesta promedio</p>
+        </div>
+        <div class="stat-item">
+          <h3 class="gradient-text">24/7</h3>
+          <p>Soporte técnico especializado</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TESTIMONIALS ===================== -->
+  <section class="testimonials" id="testimonials">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Testimonios</span>
+        <h2>Lo que dicen <span class="gradient-text">nuestros clientes</span></h2>
+        <p>Empresas de todo el mundo confían en nosotros para impulsar sus operaciones.</p>
+      </div>
+
+      <div class="testimonials-grid">
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <blockquote>"Transformó por completo la forma en que gestionamos nuestros proyectos. La velocidad y fiabilidad son incomparables."</blockquote>
+          <div class="testimonial-author">
+            <div class="author-avatar" style="background: linear-gradient(135deg, #4f46e5, #7c3aed);">AM</div>
+            <div class="author-info">
+              <strong>Ana Martínez</strong>
+              <span>CTO · TechWave</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <blockquote>"El panel de analítica en tiempo real nos dio visibilidad que antes simplemente no existía. Altamente recomendado."</blockquote>
+          <div class="testimonial-author">
+            <div class="author-avatar" style="background: linear-gradient(135deg, #0ea5e9, #2563eb);">CR</div>
+            <div class="author-info">
+              <strong>Carlos Ruiz</strong>
+              <span>Director de Producto · Globex</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="testimonial-card">
+          <div class="stars">★★★★★</div>
+          <blockquote>"Soporte excelente y una integración con nuestros sistemas que tomó menos de un día. No podemos imaginar trabajar sin esto."</blockquote>
+          <div class="testimonial-author">
+            <div class="author-avatar" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">LP</div>
+            <div class="author-info">
+              <strong>Laura Pérez</strong>
+              <span>COO · Acme Corp</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section class="cta-section" id="contact">
+    <div class="container">
+      <div class="cta-card">
+        <h2>¿Listo para empezar?</h2>
+        <p>Únete a miles de empresas que ya están construyendo el futuro con Proyecto Integrador.</p>
+        <a href="#" class="btn btn-white">
+          Comenzar gratis
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="#" class="nav-logo">Proyecto<span>.</span></a>
+          <p>Soluciones modernas para empresas que quieren crecer sin límites.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Producto</h4>
+          <ul>
+            <li><a href="#">Características</a></li>
+            <li><a href="#">Precios</a></li>
+            <li><a href="#">Documentación</a></li>
+            <li><a href="#">Actualizaciones</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Empresa</h4>
+          <ul>
+            <li><a href="#">Acerca de</a></li>
+            <li><a href="#">Blog</a></li>
+            <li><a href="#">Carreras</a></li>
+            <li><a href="#">Prensa</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="#">Privacidad</a></li>
+            <li><a href="#">Términos</a></li>
+            <li><a href="#">Cookies</a></li>
+            <li><a href="#">Licencias</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 Proyecto Integrador. Todos los derechos reservados.</p>
+        <div class="footer-social">
+          <a href="#" class="social-link" aria-label="Twitter">𝕏</a>
+          <a href="#" class="social-link" aria-label="GitHub">GH</a>
+          <a href="#" class="social-link" aria-label="LinkedIn">in</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================== JS ===================== -->
+  <script>
+    // Sticky navbar shadow on scroll
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+      navbar.classList.toggle('scrolled', window.scrollY > 10);
+    });
+
+    // Mobile nav toggle
+    const toggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+    toggle.addEventListener('click', () => {
+      const isOpen = navLinks.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', isOpen);
+    });
+
+    // Close mobile nav when a link is clicked
+    navLinks.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navLinks.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      });
+    });
+  </script>
+</body>
+</html>
