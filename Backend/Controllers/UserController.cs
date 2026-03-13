@@ -2,6 +2,11 @@ using data;
 using DTOs;
 using Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Controllers;
 
@@ -10,10 +15,12 @@ namespace Controllers;
 public class UserController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IConfiguration _config;
 
-    public UserController(AppDbContext context)
+    public UserController(AppDbContext context, IConfiguration config)
     {
         _context = context;
+        _config = config;
     }
 
     [HttpPost("register")]
@@ -55,7 +62,40 @@ public class UserController : ControllerBase
         if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.Password))
             return Unauthorized("Error: credenciales incorrectas.");
 
-        return Ok("Exitoso");
+        // ---- CREACIÓN DEL JWT ----
+        var jwtKey = _config["Jwt:Key"] ?? throw new InvalidOperationException("Falta la clave JWT en el appsettings.json");
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[] {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email)
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: _config["Jwt:Issuer"],
+            audience: _config["Jwt:Audience"],
+            claims: claims,
+            expires: DateTime.Now.AddHours(2),
+            signingCredentials: credentials);
+
+        var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+        return Ok(new { token = jwt });
+    }
+
+    // ---- ENDPOINTS DE PRUEBA DE LA ISSUE ----
+
+    [HttpGet("AllGood")]
+    public IActionResult AllGood()
+    {
+        return Ok("Este endpoint es público. No necesitas estar logueado para verlo.");
+    }
+
+    [Authorize]
+    [HttpGet("AllAuthorized")]
+    public IActionResult AllAuthorized()
+    {
+        return Ok("Sas");
     }
 }
-
