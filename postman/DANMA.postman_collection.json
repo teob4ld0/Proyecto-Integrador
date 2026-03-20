@@ -1,0 +1,145 @@
+{
+  "info": {
+    "name": "DANMA API",
+    "description": "Colección completa de endpoints para el proyecto DANMA - Bullet Hell Arena.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "JWT obtenido al hacer Login. Se llena automáticamente con el script del endpoint Login."
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"TestPlayer\",\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Registra un nuevo usuario.\n\n**Validaciones:**\n- username: 3-11 caracteres, solo letras, números y guiones bajos\n- email: formato válido\n- password: mínimo 6 caracteres\n\n**Respuesta exitosa (200):** `\"Exitoso\"`"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "    console.log('Token guardado automáticamente.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Autentica al usuario y devuelve un JWT con 2 horas de vigencia.\n\nEl script de test guarda el token automáticamente en la variable `{{token}}` de la colección."
+          }
+        },
+        {
+          "name": "Get All Users (debug)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth"]
+            },
+            "description": "Devuelve la lista de todos los usuarios registrados (sin contraseñas). Endpoint de desarrollo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users / Friends",
+      "item": [
+        {
+          "name": "Send Friend Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/2/friend-request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "2", "friend-request"]
+            },
+            "description": "Envía una solicitud de amistad al usuario con el ID indicado en la URL.\n\n**Requiere:** JWT en el header `Authorization`.\n\n**Errores posibles:**\n- 400: Ya son amigos / solicitud pendiente existente / enviarse a sí mismo\n- 404: Usuario destino no encontrado"
+          }
+        },
+        {
+          "name": "Get Pending Friend Requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/1/friend-requests",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "1", "friend-requests"]
+            },
+            "description": "Devuelve las solicitudes de amistad pendientes recibidas por el usuario cuyo ID se indica en la URL.\n\n**Requiere:** JWT del usuario dueño del ID (no podés consultar las solicitudes de otro)."
+          }
+        },
+        {
+          "name": "Accept Friend Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/friend-requests/1/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "friend-requests", "1", "accept"]
+            },
+            "description": "Acepta la solicitud de amistad con el ID indicado. Crea la amistad en ambas direcciones.\n\n**Requiere:** JWT del usuario que recibió la solicitud.\n\n**Errores posibles:**\n- 404: Solicitud no encontrada\n- 401: La solicitud no es para el usuario autenticado\n- 400: La solicitud ya fue procesada"
+          }
+        }
+      ]
+    }
+  ]
+}

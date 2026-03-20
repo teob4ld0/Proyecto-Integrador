@@ -1,0 +1,37 @@
+# ========================
+# Archivos sensibles
+# ========================
+Backend/appsettings.json
+Backend/appsettings.*.json
+!Backend/appsettings.Example.json
+
+# ========================
+# Build outputs
+# ========================
+Backend/bin/
+Backend/obj/
+
+# ========================
+# .NET / Rider / VS
+# ========================
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+*.rsuser
+
+# ========================
+# Docker
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# Logs y temporales
+# ========================
+*.log
+*.tmp
+*.swp
