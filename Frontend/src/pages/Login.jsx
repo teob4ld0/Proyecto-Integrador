@@ -76,7 +76,7 @@ export default function Login() {
         </form>
 
         <div className="auth-link">
-          New pilot? <Link to="/register">Create account</Link>
+          Fresh meat? <Link to="/register">Create account</Link>
         </div>
       </div>
     </div>
