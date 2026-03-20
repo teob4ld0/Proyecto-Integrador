@@ -32,6 +32,9 @@ services:
       - "3000:3000"
     environment:
       - API_URL=http://api:8080
+    volumes:
+      - ./Frontend:/app
+      - /app/node_modules
     depends_on:
       - api
 
