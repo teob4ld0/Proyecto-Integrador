@@ -1,4 +1,5 @@
 using data;
+using Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -9,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddScoped<EmailService>();
 
 // ---- CONFIGURACIÓN DE SWAGGER CON JWT ----
 builder.Services.AddSwaggerGen(c =>

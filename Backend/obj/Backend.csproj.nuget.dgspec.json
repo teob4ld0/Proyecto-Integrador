@@ -1,26 +1,25 @@
 {
   "format": 1,
   "restore": {
-    "/run/media/tybalt/Mimux/Proyecto-Integrador/Backend/Backend.csproj": {}
+    "C:\\Users\\teoba\\Proyecto-Integrador\\Backend\\Backend.csproj": {}
   },
   "projects": {
-    "/run/media/tybalt/Mimux/Proyecto-Integrador/Backend/Backend.csproj": {
+    "C:\\Users\\teoba\\Proyecto-Integrador\\Backend\\Backend.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/run/media/tybalt/Mimux/Proyecto-Integrador/Backend/Backend.csproj",
+        "projectUniqueName": "C:\\Users\\teoba\\Proyecto-Integrador\\Backend\\Backend.csproj",
         "projectName": "Backend",
-        "projectPath": "/run/media/tybalt/Mimux/Proyecto-Integrador/Backend/Backend.csproj",
-        "packagesPath": "/home/tybalt/.nuget/packages/",
-        "outputPath": "/run/media/tybalt/Mimux/Proyecto-Integrador/Backend/obj/",
+        "projectPath": "C:\\Users\\teoba\\Proyecto-Integrador\\Backend\\Backend.csproj",
+        "packagesPath": "C:\\Users\\teoba\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\teoba\\Proyecto-Integrador\\Backend\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/home/tybalt/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\teoba\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net9.0"
         ],
         "sources": {
-          "/usr/lib64/dotnet/library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -68,6 +67,10 @@
             "Swashbuckle.AspNetCore": {
               "target": "Package",
               "version": "[6.9.0, )"
+            },
+            "sib_api_v3_sdk": {
+              "target": "Package",
+              "version": "[4.0.2, )"
             }
           },
           "imports": [
@@ -81,20 +84,6 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "downloadDependencies": [
-            {
-              "name": "Microsoft.AspNetCore.App.Ref",
-              "version": "[9.0.13, 9.0.13]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Host.linux-x64",
-              "version": "[9.0.13, 9.0.13]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Ref",
-              "version": "[9.0.13, 9.0.13]"
-            }
-          ],
           "frameworkReferences": {
             "Microsoft.AspNetCore.App": {
               "privateAssets": "none"
@@ -103,7 +92,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/usr/lib64/dotnet/sdk/10.0.103/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json"
         }
       }
     }
