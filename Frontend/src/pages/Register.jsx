@@ -22,8 +22,7 @@ export default function Register() {
 
     try {
       await registerUser(form)
-      setSuccess('Account created! Redirecting to login...')
-      setTimeout(() => navigate('/login'), 2000)
+      setSuccess('¡Cuenta creada! Revisa tu correo para verificar tu cuenta.')
     } catch (err) {
       setError(err.message || 'Registration failed')
     } finally {

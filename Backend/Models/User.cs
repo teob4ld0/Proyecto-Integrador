@@ -11,6 +11,11 @@ public class User
     [JsonIgnore]
     public string Password { get; set; } = null!;
 
+    public bool IsEmailVerified { get; set; } = false;
+
+    [JsonIgnore]
+    public string? EmailVerificationToken { get; set; }
+
     [JsonIgnore]
     public ICollection<Friend> Friends { get; set; } = new List<Friend>();
     [JsonIgnore]
