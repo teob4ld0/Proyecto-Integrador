@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+// En dev usa '/api' (proxy de Vite). En producción/ngrok usa '' (mismo origen).
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export async function registerUser({ username, email, password }) {
   const res = await fetch(`${API_BASE}/auth/register`, {
