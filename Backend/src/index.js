@@ -1,4 +1,7 @@
+require('dotenv').config();
 const express = require('express');
+const path = require('path');
+const cors = require('cors');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
@@ -11,6 +14,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ---- MIDDLEWARES ----
+app.use(cors());
 app.use(express.json());
 
 // ---- SWAGGER ----
@@ -39,8 +43,18 @@ const swaggerSpec = swaggerJsdoc({
 
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ---- RUTAS ----
+// ---- RUTAS API ----
 app.use('/api/users', userRoutes);
+app.use('/api/auth', userRoutes); // alias para el frontend
+
+// ---- SERVIR FRONTEND ESTÁTICO (producción / ngrok) ----
+const frontendDist = path.join(__dirname, '..', '..', 'Frontend', 'dist');
+app.use(express.static(frontendDist));
+
+// SPA fallback: cualquier ruta que no sea /api ni /swagger devuelve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
 
 // ---- INICIAR SERVIDOR ----
 async function start() {
