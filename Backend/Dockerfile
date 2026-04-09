@@ -1,16 +1,12 @@
-# Stage 1: build
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM node:20-alpine
+
 WORKDIR /app
 
-COPY *.csproj ./
-RUN dotnet restore
+COPY package.json ./
+RUN npm install --production
 
-COPY . ./
-RUN dotnet publish -c Release -o out
+COPY . .
 
-# Stage 2: runtime
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
-WORKDIR /app
-COPY --from=build /app/out .
+EXPOSE 8080
 
-ENTRYPOINT ["dotnet", "Backend.dll"]
+CMD ["node", "src/index.js"]
