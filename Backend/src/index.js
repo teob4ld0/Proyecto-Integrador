@@ -40,7 +40,7 @@ const swaggerSpec = swaggerJsdoc({
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ---- RUTAS ----
-app.use('/api/users', userRoutes);
+app.use('/api/auth', userRoutes);
 
 // ---- INICIAR SERVIDOR ----
 async function start() {
