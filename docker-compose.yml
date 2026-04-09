@@ -20,8 +20,14 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=proyectodb;Username=postgres;Password=postgres
-      - ASPNETCORE_ENVIRONMENT=Development
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=proyectodb
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - JWT_KEY=UnaClaveSecretaMuyLargaYSeguraParaJWT_12345!
+      - JWT_ISSUER=DanmakrewAPI
+      - JWT_AUDIENCE=DanmakrewUsers
     depends_on:
       db:
         condition: service_healthy
