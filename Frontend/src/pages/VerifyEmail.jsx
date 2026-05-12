@@ -1,55 +1,53 @@
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import { verifyEmail } from '../services/api'
-import BulletBackground from '../components/BulletBackground'
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 export default function VerifyEmail() {
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const userId = searchParams.get('userId')
-  const token = searchParams.get('token')
-  const email = searchParams.get('email')
-
-  const [status, setStatus] = useState('loading')
-  const [message, setMessage] = useState('')
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState('Verificando tu espíritu de pelea...');
+  const hasFetched = useRef(false); // <--- El escudo contra el doble disparo de React
 
   useEffect(() => {
+    // Si ya hicimos la petición, no la vuelvas a hacer
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+
+    // Extraemos los datos del enlace que te mandó Gmail
+    const userId = searchParams.get('userId');
+    const token = searchParams.get('token');
+    const email = searchParams.get('email');
+
     if (!userId || !token || !email) {
-      setStatus('error')
-      setMessage('Enlace de verificación inválido.')
-      return
+      setStatus('Enlace incompleto. Vuelve a revisar tu correo.');
+      return;
     }
 
-    verifyEmail({ userId, token, email })
-      .then((res) => {
-        setStatus('success')
-        setMessage(typeof res === 'string' ? res : 'Correo verificado exitosamente.')
+    // Leemos la variable que pusiste en el .env del frontend
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+
+    // Disparamos al backend
+    fetch(`${apiUrl}/auth/verify-email?userId=${userId}&token=${token}&email=${email}`)
+      .then(async (res) => {
+        if (res.ok) {
+          setStatus('¡Cuenta verificada con éxito! Redirigiendo a la arena...');
+          // Esperamos 3 segundos y lo mandamos al login
+          setTimeout(() => navigate('/login'), 3000);
+        } else {
+          const errorText = await res.text();
+          setStatus(`No se pudo verificar: ${errorText}`);
+        }
       })
       .catch((err) => {
-        setStatus('error')
-        setMessage(err.message || 'Error al verificar el correo.')
-      })
-  }, [userId, token, email])
+        console.error("Fallo catastrófico:", err);
+        setStatus('Error de conexión con el servidor. ¿Está el backend encendido?');
+      });
+  }, [searchParams, navigate]);
 
   return (
-    <div className="page-container">
-      <BulletBackground />
-      <div className="danma-title">DANMA</div>
-      <div className="danma-subtitle">Bullet Hell Arena</div>
-
-      <div className="auth-card">
-        <div className="verify-container">
-          <div className="icon">{status === 'success' ? '✅' : status === 'error' ? '❌' : '⏳'}</div>
-          <h2>Email Verification</h2>
-          {status === 'loading' && <p>Verificando tu correo...</p>}
-          {status !== 'loading' && <p>{message}</p>}
-          {status === 'success' && (
-            <button className="btn-primary" style={{ marginTop: '1rem' }} onClick={() => navigate('/login')}>
-              Ir a Login
-            </button>
-          )}
-        </div>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'white', backgroundColor: '#1a1a1a' }}>
+      <div style={{ textAlign: 'center', padding: '20px', border: '1px solid #ff2d55', borderRadius: '10px' }}>
+        <h2>{status}</h2>
       </div>
     </div>
-  )
+  );
 }

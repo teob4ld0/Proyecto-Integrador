@@ -8,6 +8,7 @@ const swaggerUi = require('swagger-ui-express');
 const sequelize = require('./config/database');
 require('./models'); // registrar asociaciones
 
+// Importamos las rutas de usuario
 const userRoutes = require('./routes/userRoutes');
 
 const app = express();
@@ -38,13 +39,14 @@ const swaggerSpec = swaggerJsdoc({
     },
     security: [{ Bearer: [] }],
   },
-  apis: [], // se puede agregar JSDoc en las rutas más adelante
+  apis: ['./src/routes/*.js'], // Apuntamos a las rutas para que Swagger las lea
 });
 
 app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ---- RUTAS ----
-app.use('/api/users', userRoutes);
+// CAMBIO CLAVE: Usamos /api/auth para sincronizar con el Frontend
+app.use('/api/auth', userRoutes);
 
 // ---- INICIAR SERVIDOR ----
 async function start() {
@@ -52,7 +54,7 @@ async function start() {
     await sequelize.authenticate();
     console.log('Conexión a PostgreSQL establecida.');
 
-    // Crear tablas si no existen (equivalente a EnsureCreated)
+    // Sincronizar modelos con la base de datos
     await sequelize.sync();
     console.log('Tablas sincronizadas.');
 
