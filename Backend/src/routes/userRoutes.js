@@ -1,9 +1,10 @@
 const { Router } = require('express');
 const { body, validationResult } = require('express-validator');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs'); // Usabas bcryptjs, lo mantenemos
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
-
+const crypto = require('crypto'); // NUEVO: Para generar el token
+const { sendVerificationEmail } = require('../utils/mailer'); // NUEVO: El servicio de emails
 const { User, Friend, FriendRequest } = require('../models');
 const { FRIEND_REQUEST_STATUS } = require('../models/FriendRequest');
 const jwtConfig = require('../config/jwt');
@@ -32,7 +33,7 @@ const loginValidation = [
   body('password').notEmpty().withMessage('La contraseña es requerida.'),
 ];
 
-// POST /api/users/register
+// POST /api/users/register (o /api/auth/register dependiendo de tu index.js)
 router.post('/register', registerValidation, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -48,10 +49,56 @@ router.post('/register', registerValidation, async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // NUEVO: Generar token de verificación
+    const verificationToken = crypto.randomBytes(32).toString('hex');
 
-    await User.create({ username, email, password: hashedPassword });
+    // NUEVO: Crear usuario guardando el token y marcando isVerified como false
+    const newUser = await User.create({ 
+        username, 
+        email, 
+        password: hashedPassword,
+        verificationToken,
+        isVerified: false 
+    });
 
-    return res.status(200).send('Exitoso');
+    // NUEVO: Enviar el correo de verificación
+    await sendVerificationEmail(newUser.email, newUser.id, verificationToken);
+
+    return res.status(200).send('Usuario registrado. Por favor revisa tu email para verificar tu cuenta.');
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send('Error interno del servidor.');
+  }
+});
+
+// NUEVO: GET /verify-email - Endpoint para validar el token que llega por correo
+router.get('/verify-email', async (req, res) => {
+  try {
+    const { userId, token, email } = req.query;
+
+    if (!userId || !token || !email) {
+      return res.status(400).send('Faltan parámetros de verificación.');
+    }
+
+    const user = await User.findOne({ 
+      where: { 
+        id: userId, 
+        email: email, 
+        verificationToken: token 
+      } 
+    });
+
+    if (!user) {
+      return res.status(400).send('Enlace de verificación inválido o expirado.');
+    }
+
+    // Actualizar el usuario a verificado
+    user.isVerified = true;
+    user.verificationToken = null; // Limpiar el token para que no se re-use
+    await user.save();
+
+    return res.status(200).send('Correo verificado exitosamente. Ya puedes iniciar sesión.');
   } catch (err) {
     console.error(err);
     return res.status(500).send('Error interno del servidor.');
@@ -71,7 +118,7 @@ router.get('/', async (_req, res) => {
   }
 });
 
-// POST /api/users/login
+// POST /api/users/login (o /api/auth/login)
 router.post('/login', loginValidation, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -84,6 +131,11 @@ router.post('/login', loginValidation, async (req, res) => {
     const user = await User.findOne({ where: { email } });
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).send('Error: credenciales incorrectas.');
+    }
+
+    // NUEVO: Validar si el usuario ha verificado su email
+    if (!user.isVerified) {
+      return res.status(403).send('Error: Debes verificar tu email antes de iniciar sesión.');
     }
 
     const token = jwt.sign(
