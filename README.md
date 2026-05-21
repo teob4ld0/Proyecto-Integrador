@@ -30,9 +30,9 @@ Esto levanta:
 
 | Servicio   | Puerto local | Descripción                  |
 |------------|-------------|------------------------------|
-| **db**     | 5432        | PostgreSQL 16                |
-| **api**    | 5000        | Backend Node.js (Express)    |
-| **frontend** | 3000     | Frontend React (Vite dev)    |
+| **db**     | 5432        | Redis stack                  |
+| **api**    | 5000        | Backend Node.js (Fastify)    |
+| **frontend** | 3000     | Frontend React (Vite dev)     |
 
 Esperá a ver en la terminal:
 ```
