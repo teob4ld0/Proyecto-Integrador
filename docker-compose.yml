@@ -1,49 +1,27 @@
 services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: proyectodb
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   api:
     build: ./Backend
     ports:
-      - "5000:5000"
+      - "8080:8080"
+    env_file:
+      - ./Backend/.env
     environment:
-      - PORT=5000
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=proyectodb
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-      - JWT_KEY=UnaClaveSecretaMuyLargaYSeguraParaJWT_12345!
-      - JWT_ISSUER=DanmakrewAPI
-      - JWT_AUDIENCE=DanmakrewUsers
-    depends_on:
-      db:
-        condition: service_healthy
+      - NODE_ENV=production
+      - PORT=8080
+      - HOST=0.0.0.0
+      - DB_PATH=/app/data/danmakrew.db
+    volumes:
+      - sqlite_data:/app/data
+    restart: unless-stopped
 
   frontend:
-    build: ./Frontend
+    build:
+      context: ./Frontend
     ports:
       - "3000:3000"
-    environment:
-      - API_URL=http://api:5000
-    volumes:
-      - ./Frontend:/app
-      - /app/node_modules
     depends_on:
       - api
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  sqlite_data:

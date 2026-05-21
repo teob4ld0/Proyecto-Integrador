@@ -1,5 +1,8 @@
-// En dev usa '/api' (proxy de Vite). En producción/ngrok usa '' (mismo origen).
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// En dev el proxy de Vite redirige /api → backend (sin VITE_API_URL).
+// En producción VITE_API_URL es la URL base del servidor, ej: http://localhost:8080
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
 
 export async function registerUser({ username, email, password }) {
   const res = await fetch(`${API_BASE}/auth/register`, {

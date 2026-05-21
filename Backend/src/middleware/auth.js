@@ -1,24 +1,24 @@
-const jwt = require('jsonwebtoken');
-const jwtConfig = require('../config/jwt');
+const lucia = require('../config/auth');
 
-function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
+/**
+ * Fastify preHandler — valida el session ID enviado como Bearer token.
+ * Adjunta `request.user` y `request.session` si es válido.
+ */
+async function authenticate(request, reply) {
+  const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Token no proporcionado.' });
+    return reply.status(401).send({ message: 'Token no proporcionado.' });
   }
 
-  const token = authHeader.split(' ')[1];
+  const sessionId = authHeader.slice(7);
 
-  try {
-    const decoded = jwt.verify(token, jwtConfig.key, {
-      issuer: jwtConfig.issuer,
-      audience: jwtConfig.audience,
-    });
-    req.user = decoded;
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Token inválido o expirado.' });
+  const { session, user } = await lucia.validateSession(sessionId);
+  if (!session) {
+    return reply.status(401).send({ message: 'Sesión inválida o expirada.' });
   }
+
+  request.session = session;
+  request.user = user;
 }
 
 module.exports = authenticate;

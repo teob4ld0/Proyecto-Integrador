@@ -1,280 +1,191 @@
-const { Router } = require('express');
-const { body, validationResult } = require('express-validator');
-const bcrypt = require('bcryptjs'); // Usabas bcryptjs, lo mantenemos
-const jwt = require('jsonwebtoken');
-const { Op } = require('sequelize');
-const crypto = require('crypto'); // NUEVO: Para generar el token
-const { sendVerificationEmail } = require('../utils/mailer'); // NUEVO: El servicio de emails
-const { User, Friend, FriendRequest } = require('../models');
-const { FRIEND_REQUEST_STATUS } = require('../models/FriendRequest');
-const jwtConfig = require('../config/jwt');
+const { z } = require('zod');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { generateId } = require('lucia');
+const lucia = require('../config/auth');
 const authenticate = require('../middleware/auth');
+const { User, Friend, FriendRequest, FRIEND_REQUEST_STATUS } = require('../models');
+const { sendVerificationEmail } = require('../utils/mailer');
 
-const router = Router();
+// ---- Schemas Zod ----
+const registerSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'El nombre de usuario debe tener al menos 3 caracteres.')
+    .max(11, 'El nombre de usuario no puede superar 11 caracteres.')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Solo letras, números y guiones bajos.'),
+  email: z.string().email('Email inválido.'),
+  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres.'),
+});
 
-// ---- VALIDACIONES ----
-const registerValidation = [
-  body('username')
-    .trim()
-    .isLength({ min: 3, max: 11 })
-    .withMessage('El nombre de usuario debe tener entre 3 y 11 caracteres.')
-    .matches(/^[a-zA-Z0-9_]+$/)
-    .withMessage('El nombre de usuario solo puede contener letras, números y guiones bajos.'),
-  body('email')
-    .isEmail()
-    .withMessage('Email inválido.'),
-  body('password')
-    .isLength({ min: 6 })
-    .withMessage('La contraseña debe tener al menos 6 caracteres.'),
-];
+const loginSchema = z.object({
+  email: z.string().email('Email inválido.'),
+  password: z.string().min(1, 'La contraseña es requerida.'),
+});
 
-const loginValidation = [
-  body('email').isEmail().withMessage('Email inválido.'),
-  body('password').notEmpty().withMessage('La contraseña es requerida.'),
-];
+async function userRoutes(fastify) {
+  // POST /register
+  fastify.post('/register', async (request, reply) => {
+    const result = registerSchema.safeParse(request.body);
+    if (!result.success) {
+      return reply.status(400).send({ message: result.error.issues[0].message });
+    }
 
-// POST /api/users/register (o /api/auth/register dependiendo de tu index.js)
-router.post('/register', registerValidation, async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).send('Error: datos inválidos.');
-  }
+    const { username, email, password } = result.data;
 
-  try {
-    const { username, email, password } = req.body;
-
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      return res.status(400).send('Error: el email ya está registrado.');
+    if (User.findByEmail(email)) {
+      return reply.status(400).send({ message: 'El email ya está registrado.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // NUEVO: Generar token de verificación
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const userId = generateId(15);
 
-    // NUEVO: Crear usuario guardando el token y marcando isVerified como false
-    const newUser = await User.create({ 
-        username, 
-        email, 
-        password: hashedPassword,
-        verificationToken,
-        isVerified: false 
-    });
+    const newUser = User.create({ id: userId, username, email, password: hashedPassword, verificationToken });
 
-    // NUEVO: Enviar el correo de verificación
-    await sendVerificationEmail(newUser.email, newUser.id, verificationToken);
+    try {
+      await sendVerificationEmail(newUser.email, newUser.id, verificationToken);
+    } catch (err) {
+      fastify.log.warn({ err }, 'No se pudo enviar el email de verificación.');
+    }
 
-    return res.status(200).send('Usuario registrado. Por favor revisa tu email para verificar tu cuenta.');
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
+    return reply.send({ message: 'Usuario registrado. Por favor revisa tu email para verificar tu cuenta.' });
+  });
 
-// NUEVO: GET /verify-email - Endpoint para validar el token que llega por correo
-router.get('/verify-email', async (req, res) => {
-  try {
-    const { userId, token, email } = req.query;
+  // GET /verify-email
+  fastify.get('/verify-email', async (request, reply) => {
+    const { userId, token, email } = request.query;
 
     if (!userId || !token || !email) {
-      return res.status(400).send('Faltan parámetros de verificación.');
+      return reply.status(400).send({ message: 'Faltan parámetros de verificación.' });
     }
 
-    const user = await User.findOne({ 
-      where: { 
-        id: userId, 
-        email: email, 
-        verificationToken: token 
-      } 
-    });
-
-    if (!user) {
-      return res.status(400).send('Enlace de verificación inválido o expirado.');
+    const user = User.findById(userId);
+    if (!user || user.email !== email || user.verification_token !== token) {
+      return reply.status(400).send({ message: 'Enlace de verificación inválido o expirado.' });
     }
 
-    // Actualizar el usuario a verificado
-    user.isVerified = true;
-    user.verificationToken = null; // Limpiar el token para que no se re-use
-    await user.save();
+    User.verify(userId);
 
-    return res.status(200).send('Correo verificado exitosamente. Ya puedes iniciar sesión.');
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
+    return reply.send({ message: 'Correo verificado exitosamente. Ya puedes iniciar sesión.' });
+  });
 
-// GET /api/users
-router.get('/', async (_req, res) => {
-  try {
-    const users = await User.findAll({
-      attributes: ['id', 'username', 'email'], // excluye password
-    });
-    return res.json(users);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
+  // GET / — listar usuarios
+  fastify.get('/', async (_request, reply) => {
+    return reply.send(User.findAll());
+  });
 
-// POST /api/users/login (o /api/auth/login)
-router.post('/login', loginValidation, async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).send('Error: datos inválidos.');
-  }
+  // POST /login
+  fastify.post('/login', async (request, reply) => {
+    const result = loginSchema.safeParse(request.body);
+    if (!result.success) {
+      return reply.status(400).send({ message: result.error.issues[0].message });
+    }
 
-  try {
-    const { email, password } = req.body;
+    const { email, password } = result.data;
 
-    const user = await User.findOne({ where: { email } });
+    const user = User.findByEmail(email);
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).send('Error: credenciales incorrectas.');
+      return reply.status(401).send({ message: 'Credenciales incorrectas.' });
     }
 
-    // NUEVO: Validar si el usuario ha verificado su email
-    if (!user.isVerified) {
-      return res.status(403).send('Error: Debes verificar tu email antes de iniciar sesión.');
+    if (!user.is_verified) {
+      return reply.status(403).send({ message: 'Debes verificar tu email antes de iniciar sesión.' });
     }
 
-    const token = jwt.sign(
-      { sub: user.username, email: user.email },
-      jwtConfig.key,
-      {
-        issuer: jwtConfig.issuer,
-        audience: jwtConfig.audience,
-        expiresIn: jwtConfig.expiresIn,
-      }
-    );
+    const session = await lucia.createSession(user.id, {});
 
-    return res.json({ token });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
+    return reply.send({ token: session.id });
+  });
 
-// GET /api/users/AllGood  — Endpoint público de prueba
-router.get('/AllGood', (_req, res) => {
-  return res.send('Este endpoint es público. No necesitas estar logueado para verlo.');
-});
+  // POST /logout
+  fastify.post('/logout', { preHandler: authenticate }, async (request, reply) => {
+    await lucia.invalidateSession(request.session.id);
+    return reply.send({ message: 'Sesión cerrada.' });
+  });
 
-// GET /api/users/AllAuthorized  — Endpoint protegido de prueba
-router.get('/AllAuthorized', authenticate, (_req, res) => {
-  return res.send('Sas');
-});
+  // GET /AllGood — endpoint público de prueba
+  fastify.get('/AllGood', async (_request, reply) => {
+    return reply.send('Este endpoint es público. No necesitas estar logueado para verlo.');
+  });
 
-// ---- FRIEND REQUEST ENDPOINTS ----
+  // GET /AllAuthorized — endpoint protegido de prueba
+  fastify.get('/AllAuthorized', { preHandler: authenticate }, async (_request, reply) => {
+    return reply.send('Autorizado.');
+  });
 
-// POST /api/users/:id/friend-request  — Enviar solicitud de amistad
-router.post('/:id/friend-request', authenticate, async (req, res) => {
-  try {
-    const receiverId = parseInt(req.params.id, 10);
-    const sender = await User.findOne({ where: { email: req.user.email } });
-    if (!sender) return res.status(401).send('No autorizado.');
+  // ---- FRIEND REQUEST ENDPOINTS ----
 
-    if (sender.id === receiverId) {
-      return res.status(400).send('No puedes enviarte una solicitud a ti mismo.');
+  // POST /:id/friend-request
+  fastify.post('/:id/friend-request', { preHandler: authenticate }, async (request, reply) => {
+    const receiverId = request.params.id;
+    const senderId = request.user.id;
+
+    if (senderId === receiverId) {
+      return reply.status(400).send({ message: 'No puedes enviarte una solicitud a ti mismo.' });
     }
 
-    const receiver = await User.findByPk(receiverId);
-    if (!receiver) return res.status(404).send('Usuario no encontrado.');
-
-    const alreadyFriends = await Friend.findOne({
-      where: { UserId: sender.id, FriendUserId: receiverId },
-    });
-    if (alreadyFriends) return res.status(400).send('Ya son amigos.');
-
-    const alreadyPending = await FriendRequest.findOne({
-      where: {
-        Status: FRIEND_REQUEST_STATUS.Pendiente,
-        [Op.or]: [
-          { SenderId: sender.id, ReceiverId: receiverId },
-          { SenderId: receiverId, ReceiverId: sender.id },
-        ],
-      },
-    });
-    if (alreadyPending) return res.status(400).send('Ya hay una solicitud pendiente.');
-
-    await FriendRequest.create({
-      SenderId: sender.id,
-      ReceiverId: receiverId,
-    });
-
-    return res.send('Solicitud de amistad enviada.');
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
-
-// GET /api/users/:id/friend-requests  — Obtener solicitudes pendientes
-router.get('/:id/friend-requests', authenticate, async (req, res) => {
-  try {
-    const targetId = parseInt(req.params.id, 10);
-    const currentUser = await User.findOne({ where: { email: req.user.email } });
-    if (!currentUser || currentUser.id !== targetId) {
-      return res.status(401).send('No tienes permiso.');
+    if (!User.findById(receiverId)) {
+      return reply.status(404).send({ message: 'Usuario no encontrado.' });
     }
 
-    const requests = await FriendRequest.findAll({
-      where: {
-        ReceiverId: targetId,
-        Status: FRIEND_REQUEST_STATUS.Pendiente,
-      },
-      include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }],
-    });
+    if (Friend.exists(senderId, receiverId)) {
+      return reply.status(400).send({ message: 'Ya son amigos.' });
+    }
+
+    if (FriendRequest.hasPending(senderId, receiverId)) {
+      return reply.status(400).send({ message: 'Ya hay una solicitud pendiente.' });
+    }
+
+    FriendRequest.create(senderId, receiverId);
+
+    return reply.send({ message: 'Solicitud de amistad enviada.' });
+  });
+
+  // GET /:id/friend-requests
+  fastify.get('/:id/friend-requests', { preHandler: authenticate }, async (request, reply) => {
+    const targetId = request.params.id;
+
+    if (request.user.id !== targetId) {
+      return reply.status(403).send({ message: 'No tienes permiso.' });
+    }
+
+    const requests = FriendRequest.findPendingForReceiver(targetId);
 
     const result = requests.map((fr) => ({
       requestId: fr.id,
-      senderId: fr.SenderId,
-      senderName: fr.sender.username,
+      senderId: fr.sender_id,
+      senderName: fr.sender_username,
       status: Object.keys(FRIEND_REQUEST_STATUS).find(
-        (k) => FRIEND_REQUEST_STATUS[k] === fr.Status
+        (k) => FRIEND_REQUEST_STATUS[k] === fr.status
       ),
-      createdAt: fr.CreatedAt,
+      createdAt: fr.created_at,
     }));
 
-    return res.json(result);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
+    return reply.send(result);
+  });
 
-// POST /api/users/friend-requests/:requestId/accept  — Aceptar solicitud
-router.post('/friend-requests/:requestId/accept', authenticate, async (req, res) => {
-  try {
-    const requestId = parseInt(req.params.requestId, 10);
-    const currentUser = await User.findOne({ where: { email: req.user.email } });
-    if (!currentUser) return res.status(401).send('No autorizado.');
+  // POST /friend-requests/:requestId/accept
+  fastify.post('/friend-requests/:requestId/accept', { preHandler: authenticate }, async (request, reply) => {
+    const requestId = parseInt(request.params.requestId, 10);
+    const currentUserId = request.user.id;
 
-    const request = await FriendRequest.findByPk(requestId);
-    if (!request) return res.status(404).send('Solicitud no encontrada.');
+    const fr = FriendRequest.findById(requestId);
+    if (!fr) return reply.status(404).send({ message: 'Solicitud no encontrada.' });
 
-    if (request.ReceiverId !== currentUser.id) {
-      return res.status(401).send('Esta solicitud no es para ti.');
+    if (fr.receiver_id !== currentUserId) {
+      return reply.status(403).send({ message: 'Esta solicitud no es para ti.' });
     }
 
-    if (request.Status !== FRIEND_REQUEST_STATUS.Pendiente) {
-      return res.status(400).send('Esta solicitud ya fue procesada.');
+    if (fr.status !== FRIEND_REQUEST_STATUS.Pendiente) {
+      return reply.status(400).send({ message: 'Esta solicitud ya fue procesada.' });
     }
 
-    request.Status = FRIEND_REQUEST_STATUS.Aceptada;
-    await request.save();
+    FriendRequest.updateStatus(requestId, FRIEND_REQUEST_STATUS.Aceptada);
+    Friend.createPair(fr.sender_id, fr.receiver_id);
 
-    // Crear amistad bidireccional
-    await Friend.bulkCreate([
-      { UserId: request.SenderId, FriendUserId: request.ReceiverId },
-      { UserId: request.ReceiverId, FriendUserId: request.SenderId },
-    ]);
+    return reply.send({ message: 'Solicitud aceptada. Ahora son amigos.' });
+  });
+}
 
-    return res.send('Solicitud aceptada. Ahora son amigos.');
-  } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error interno del servidor.');
-  }
-});
-
-module.exports = router;
+module.exports = userRoutes;

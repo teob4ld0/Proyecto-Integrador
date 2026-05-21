@@ -22,8 +22,10 @@ export default function VerifyEmail() {
       return;
     }
 
-    // Leemos la variable que pusiste en el .env del frontend
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+    // Construimos la URL igual que api.js para mantener consistencia
+    const apiUrl = import.meta.env.VITE_API_URL
+      ? `${import.meta.env.VITE_API_URL}/api`
+      : '/api';
 
     // Disparamos al backend
     fetch(`${apiUrl}/auth/verify-email?userId=${userId}&token=${token}&email=${email}`)

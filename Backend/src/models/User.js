@@ -1,37 +1,30 @@
-// Backend/src/models/User.js
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const db = require('../config/database');
 
-const User = sequelize.define('User', {
-  id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
+const User = {
+  findByEmail(email) {
+    return db.prepare('SELECT * FROM user WHERE email = ?').get(email);
   },
-  username: {
-    type: DataTypes.STRING,
-    allowNull: false,
+
+  findById(id) {
+    return db.prepare('SELECT * FROM user WHERE id = ?').get(id);
   },
-  email: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true,
+
+  findAll() {
+    return db.prepare('SELECT id, username, email FROM user').all();
   },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: false,
+
+  create({ id, username, email, password, verificationToken }) {
+    db.prepare(
+      'INSERT INTO user (id, username, email, password, is_verified, verification_token) VALUES (?, ?, ?, ?, 0, ?)'
+    ).run(id, username, email, password, verificationToken ?? null);
+    return this.findById(id);
   },
-  isVerified: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false,
+
+  verify(id) {
+    db.prepare(
+      'UPDATE user SET is_verified = 1, verification_token = NULL WHERE id = ?'
+    ).run(id);
   },
-  verificationToken: {
-    type: DataTypes.STRING,
-    allowNull: true,
-  }
-}, {
-  tableName: 'Users',
-  timestamps: false,
-});
+};
 
 module.exports = User;
