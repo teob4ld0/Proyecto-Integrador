@@ -1,5 +1,4 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const db = require('../config/database');
 
 const FRIEND_REQUEST_STATUS = {
   Pendiente: 0,
@@ -7,35 +6,42 @@ const FRIEND_REQUEST_STATUS = {
   Rechazada: 2,
 };
 
-const FriendRequest = sequelize.define('FriendRequest', {
-  id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
+const FriendRequest = {
+  hasPending(userAId, userBId) {
+    return !!db
+      .prepare(
+        `SELECT 1 FROM friend_request
+         WHERE status = 0
+           AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))`
+      )
+      .get(userAId, userBId, userBId, userAId);
   },
-  senderId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'SenderId',
+
+  create(senderId, receiverId) {
+    return db
+      .prepare('INSERT INTO friend_request (sender_id, receiver_id) VALUES (?, ?)')
+      .run(senderId, receiverId);
   },
-  receiverId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'ReceiverId',
+
+  findPendingForReceiver(receiverId) {
+    return db
+      .prepare(
+        `SELECT fr.id, fr.sender_id, fr.receiver_id, fr.status, fr.created_at,
+                u.username AS sender_username
+         FROM friend_request fr
+         JOIN user u ON u.id = fr.sender_id
+         WHERE fr.receiver_id = ? AND fr.status = 0`
+      )
+      .all(receiverId);
   },
-  status: {
-    type: DataTypes.INTEGER,
-    defaultValue: FRIEND_REQUEST_STATUS.Pendiente,
-    field: 'Status',
+
+  findById(id) {
+    return db.prepare('SELECT * FROM friend_request WHERE id = ?').get(id);
   },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    field: 'CreatedAt',
+
+  updateStatus(id, status) {
+    db.prepare('UPDATE friend_request SET status = ? WHERE id = ?').run(status, id);
   },
-}, {
-  tableName: 'FriendRequests',
-  timestamps: false,
-});
+};
 
 module.exports = { FriendRequest, FRIEND_REQUEST_STATUS };

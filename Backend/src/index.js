@@ -1,69 +1,39 @@
 require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const cors = require('cors');
-const swaggerJsdoc = require('swagger-jsdoc');
-const swaggerUi = require('swagger-ui-express');
+const fastify = require('fastify')({ logger: true });
+const cors = require('@fastify/cors');
 
-const sequelize = require('./config/database');
-require('./models'); // registrar asociaciones
-
-// Importamos las rutas de usuario
 const userRoutes = require('./routes/userRoutes');
 
-const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = parseInt(process.env.PORT || '8080', 10);
+const HOST = process.env.HOST || '0.0.0.0';
 
-// ---- MIDDLEWARES ----
-app.use(cors());
-app.use(express.json());
-
-// ---- SWAGGER ----
-const swaggerSpec = swaggerJsdoc({
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Danmakrew API',
-      version: '1.0.0',
-      description: 'API del proyecto integrador',
-    },
-    components: {
-      securitySchemes: {
-        Bearer: {
-          type: 'apiKey',
-          name: 'Authorization',
-          in: 'header',
-          description: "Ingresa 'Bearer' [espacio] y luego tu token.\r\n\r\nEjemplo: \"Bearer eyJhbGci...\"",
-        },
-      },
-    },
-    security: [{ Bearer: [] }],
-  },
-  apis: ['./src/routes/*.js'], // Apuntamos a las rutas para que Swagger las lea
-});
-
-app.use('/swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// ---- RUTAS ----
-// CAMBIO CLAVE: Usamos /api/auth para sincronizar con el Frontend
-app.use('/api/auth', userRoutes);
-
-// ---- INICIAR SERVIDOR ----
 async function start() {
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  await fastify.register(cors, {
+    origin: (origin, cb) => {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /\.ngrok(-free)?\.(app|dev|io)$/.test(origin)
+      ) {
+        cb(null, true);
+      } else {
+        cb(new Error('Not allowed by CORS'), false);
+      }
+    },
+  });
+
+  fastify.register(userRoutes, { prefix: '/api/auth' });
+
   try {
-    await sequelize.authenticate();
-    console.log('Conexión a PostgreSQL establecida.');
-
-    // Sincronizar modelos con la base de datos
-    await sequelize.sync();
-    console.log('Tablas sincronizadas.');
-
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en http://localhost:${PORT}`);
-      console.log(`Swagger UI en http://localhost:${PORT}/swagger`);
-    });
+    await fastify.listen({ port: PORT, host: HOST });
+    fastify.log.info(`Servidor corriendo en http://localhost:${PORT}`);
   } catch (err) {
-    console.error('Error al iniciar el servidor:', err);
+    fastify.log.error(err);
     process.exit(1);
   }
 }

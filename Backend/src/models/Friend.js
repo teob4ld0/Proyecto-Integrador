@@ -1,36 +1,21 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const db = require('../config/database');
 
-const Friend = sequelize.define('Friend', {
-  id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
+const Friend = {
+  exists(userId, friendUserId) {
+    return !!db
+      .prepare('SELECT 1 FROM friend WHERE user_id = ? AND friend_user_id = ?')
+      .get(userId, friendUserId);
   },
-  userId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'UserId',
+
+  createPair(userId, friendUserId) {
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO friend (user_id, friend_user_id) VALUES (?, ?)'
+    );
+    db.transaction(() => {
+      insert.run(userId, friendUserId);
+      insert.run(friendUserId, userId);
+    })();
   },
-  friendUserId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'FriendUserId',
-  },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    field: 'CreatedAt',
-  },
-}, {
-  tableName: 'Friends',
-  timestamps: false,
-  indexes: [
-    {
-      unique: true,
-      fields: ['UserId', 'FriendUserId'],
-    },
-  ],
-});
+};
 
 module.exports = Friend;

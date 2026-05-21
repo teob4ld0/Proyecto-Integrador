@@ -6,9 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    // Esto le dice a Vite que permita conexiones desde ngrok
     allowedHosts: true,
-    // NUEVO: El puente hacia tu backend
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -16,5 +14,17 @@ export default defineConfig({
         secure: false,
       },
     },
-  }
+  },
+  preview: {
+    port: 3000,
+    host: true,
+    // En Docker, el backend es alcanzable por el nombre del servicio "api"
+    proxy: {
+      '/api': {
+        target: 'http://api:8080',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 })
