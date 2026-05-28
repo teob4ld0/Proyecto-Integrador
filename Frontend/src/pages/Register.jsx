@@ -1,46 +1,45 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { registerUser } from '../services/api'
-import BulletBackground from '../components/BulletBackground'
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import BulletBackground from '../components/BulletBackground';
 
 export default function Register() {
-  const navigate = useNavigate()
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate();
+  
+  // Estado puramente visual para que el formulario funcione en el frontend
+  const [form, setForm] = useState({ username: '', email: '', password: '' });
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
-  }
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
-    setLoading(true)
-
-    try {
-      await registerUser(form)
-      setSuccess('¡Cuenta creada! Revisa tu correo para verificar tu cuenta.')
-    } catch (err) {
-      setError(err.message || 'Registration failed')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    // Le dejamos la tarea al del backend
+    console.log('Backend: Hacer fetch a la API de registro con:', form);
+    
+    // Simulamos que se registró y lo mandamos a la pantalla de Log In
+    navigate('/login');
+  };
 
   return (
-    <div className="page-container">
+    <div className="menu-page-container">
       <BulletBackground />
-      <div className="danma-title">DANMA</div>
-      <div className="danma-subtitle">Bullet Hell Arena</div>
+
+      {/* Botón de volver al Home */}
+      <button className="back-arrow-btn" onClick={() => navigate('/')}>
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M10 19L3 12M3 12L10 5M3 12H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {/* Cabecera unificada con el Home y el Login */}
+      <div className="menu-header" style={{ marginBottom: '2rem' }}>
+        <h1 className="menu-title">DANMAKREW</h1>
+        <h2 className="menu-subtitle">NOMERCYGAMES</h2>
+      </div>
 
       <div className="auth-card">
-        <h2>Create Account</h2>
-
-        {error && <div className="message error">{error}</div>}
-        {success && <div className="message success">{success}</div>}
+        <h2>Sign In</h2>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -87,8 +86,9 @@ export default function Register() {
             />
           </div>
 
-          <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Creating...' : 'Register'}
+          {/* El botón estético que usa la nueva clase del CSS */}
+          <button type="submit" className="btn-login-submit">
+            Create Account
           </button>
         </form>
 
@@ -97,5 +97,5 @@ export default function Register() {
         </div>
       </div>
     </div>
-  )
+  );
 }

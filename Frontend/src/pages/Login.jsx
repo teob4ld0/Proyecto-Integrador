@@ -23,7 +23,8 @@ export default function Login() {
       if (data.token) {
         localStorage.setItem('danma_token', data.token)
       }
-      navigate('/')
+      // Redirección al Dashboard adaptado
+      navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Login failed')
     } finally {
@@ -34,8 +35,12 @@ export default function Login() {
   return (
     <div className="page-container">
       <BulletBackground />
-      <div className="danma-title">DANMA</div>
-      <div className="danma-subtitle">Bullet Hell Arena</div>
+      
+      {/* Reutilizamos exactamente la misma cabecera del menú con sus estilos nuevos */}
+      <div className="menu-header" style={{ marginBottom: '2rem' }}>
+        <h1 className="menu-title">DANMAKREW</h1>
+        <h2 className="menu-subtitle">NOMERCYGAMES</h2>
+      </div>
 
       <div className="auth-card">
         <h2>Log In</h2>
@@ -70,7 +75,8 @@ export default function Login() {
             />
           </div>
 
-          <button type="submit" className="btn-primary" disabled={loading}>
+          {/* Cambiamos a una clase dedicada para estilizar el botón según el nuevo formato */}
+          <button type="submit" className="btn-login-submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Enter the Arena'}
           </button>
         </form>
