@@ -1,40 +1,51 @@
-import { Link } from 'react-router-dom'
-import BulletBackground from '../components/BulletBackground'
+import { useNavigate } from 'react-router-dom';
+import BulletBackground from '../components/BulletBackground';
 
 export default function Home() {
-  const token = localStorage.getItem('danma_token')
-
-  const handleLogout = () => {
-    localStorage.removeItem('danma_token')
-    window.location.reload()
-  }
+  const navigate = useNavigate();
 
   return (
-    <div className="page-container">
+    <div className="menu-page-container">
+      {/* Fondo animado */}
       <BulletBackground />
-      <div className="home-container">
-        <div className="danma-title">DANMA</div>
-        <div className="danma-subtitle">Bullet Hell Arena</div>
 
-        <div className="home-nav">
-          {token ? (
-            <>
-              <button
-                onClick={handleLogout}
-                className="btn-primary"
-                style={{ width: 'auto', padding: '0.8rem 2rem' }}
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/login">Log In</Link>
-              <Link to="/register">Register</Link>
-            </>
-          )}
+      {/* Títulos con el degradado en los bordes y la tipografía de NoMercyGames */}
+      <div className="menu-header">
+        <h1 className="menu-title">DANMAKREW</h1>
+        <h2 className="menu-subtitle">NOMERCYGAMES</h2>
+      </div>
+
+      {/* Contenedor de los botones */}
+      <div className="menu-buttons-container">
+        
+        {/* Fila superior (LOG IN y SIGN IN) */}
+        <div className="menu-row">
+          <button 
+            className="menu-btn" 
+            onClick={() => navigate('/login')}
+          >
+            LOG IN
+          </button>
+
+          <button 
+            className="menu-btn" 
+            onClick={() => navigate('/register')}
+          >
+            SIGN IN
+          </button>
         </div>
+
+        {/* Fila inferior (GTFO) */}
+        <div className="menu-row">
+          <button 
+            className="menu-btn" 
+            onClick={() => console.log('Backend: Conectar acción de salir/cerrar juego')}
+          >
+            GTFO ;]
+          </button>
+        </div>
+
       </div>
     </div>
-  )
+  );
 }
