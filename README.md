@@ -11,6 +11,19 @@
 
 ---
 
+## Stack
+
+| Capa | Tecnología |
+|------|-----------|
+| Framework HTTP | Fastify v4 |
+| Base de datos de usuarios | SQLite (via better-sqlite3 + Lucia) |
+| Sesiones de salas efímeras | Redis Stack (ioredis) |
+| Señalización WebSocket | µWebSockets.js |
+| Validación de esquemas | Zod |
+| Frontend | React + Vite |
+
+---
+
 ## Levantar el proyecto con Docker
 
 ### 1. Clonar el repositorio
@@ -20,7 +33,14 @@ git clone https://github.com/TU_USUARIO/Proyecto-Integrador.git
 cd Proyecto-Integrador
 ```
 
-### 2. Levantar todos los servicios
+### 2. Configurar variables de entorno
+
+```bash
+cp Backend/.env.example Backend/.env
+# Editar Backend/.env con tus valores reales
+```
+
+### 3. Levantar todos los servicios
 
 ```bash
 docker compose up --build
@@ -28,76 +48,122 @@ docker compose up --build
 
 Esto levanta:
 
-| Servicio   | Puerto local | Descripción                  |
-|------------|-------------|------------------------------|
-| **db**     | 5432        | Redis stack                  |
-| **api**    | 5000        | Backend Node.js (Fastify)    |
-| **frontend** | 3000     | Frontend React (Vite dev)     |
+| Servicio     | Puerto local | Descripción                              |
+|--------------|-------------|------------------------------------------|
+| **redis**    | 6379        | Redis Stack (salas efímeras)             |
+| **api**      | 8080        | Backend Node.js (Fastify HTTP)           |
+| **api**      | 9001        | Servidor de señalización WebSocket       |
+| **frontend** | 3000        | Frontend React (Vite dev)                |
 
 Esperá a ver en la terminal:
 ```
+[Redis] Connected
 Servidor corriendo en http://localhost:8080
-Tablas sincronizadas.
+[Signal] WebSocket signaling server listening on port 9001
 ```
 
-### 3. Verificar que funciona localmente
+### 4. Verificar que funciona localmente
 
 - **Frontend:** http://localhost:3000
-- **API:** http://localhost:5000/api/users
-- **Swagger:** http://localhost:5000/swagger
+- **API REST:** http://localhost:8080/api
+- **WebSocket señalización:** ws://localhost:9001/signal?token=TU_SESSION_ID
+
+---
+
+## API de Salas
+
+### `POST /api/rooms` — Crear sala (requiere autenticación)
+
+```json
+{
+  "name": "Mi sala",
+  "map": "classic",
+  "maxPlayers": 8,
+  "password": "opcional",
+  "isPublic": true
+}
+```
+
+Respuesta `201`:
+```json
+{
+  "id": "uuid",
+  "name": "Mi sala",
+  "hostId": "uuid-del-host",
+  "map": "classic",
+  "maxPlayers": 8,
+  "players": 1,
+  "hasPassword": false,
+  "isPublic": true,
+  "createdAt": "2026-01-01T00:00:00.000Z"
+}
+```
+
+Las salas tienen TTL de **2 horas** en Redis.
+
+### `GET /api/rooms` — Listar salas públicas
+
+Devuelve las 50 salas públicas más recientes sin contraseña.
+
+### `DELETE /api/rooms/:roomId` — Eliminar sala (solo el host)
+
+---
+
+## Protocolo WebSocket de señalización
+
+Conectar a `ws://localhost:9001/signal?token=<session_id>`.
+
+### Mensajes cliente → servidor
+
+| `type` | Campos adicionales | Descripción |
+|---|---|---|
+| `host-room` | `roomId` | El host registra la sala (debe existir en Redis) |
+| `join-room` | `roomId` | Un jugador solicita unirse |
+| `ping` | — | Heartbeat (enviar cada ~30s) |
+
+### Mensajes servidor → cliente
+
+| `type` | Descripción |
+|---|---|
+| `room-hosted` | Confirmación de sala registrada |
+| `room-joined` | Confirmación de unión |
+| `player-join-request` | Llega al host cuando un jugador se une (incluye `userId`) |
+| `host-disconnected` | Llega a los jugadores cuando el host se desconecta |
+| `pong` | Respuesta al ping |
+| `error` | Error de protocolo (incluye `message`) |
 
 ---
 
 ## Exponer con ngrok (acceso público)
 
-### Opción A: Exponer solo el backend (API)
+### Exponer solo el backend (API + WS)
 
 ```bash
-ngrok http 5000
-```
-
-Esto te da una URL pública como `https://xxxx-xxx.ngrok-free.app`. Podés usarla para probar la API desde Postman o desde otro dispositivo.
-
-### Opción B: Exponer el frontend + backend juntos
-
-Para esto necesitás servir el frontend como estático desde el backend (el proyecto ya lo soporta).
-
-#### Paso 1: Hacer build del frontend
-
-```bash
-cd Frontend
-npm install
-npm run build
-cd ..
-```
-
-Esto genera la carpeta `Frontend/dist/`.
-
-#### Paso 2: Levantar el backend (que sirve el frontend estático)
-
-Pará los contenedores de Docker y levantá solo la base de datos:
-
-```bash
-docker compose up db
-```
-
-En otra terminal, levantá el backend:
-
-```bash
-cd Backend
-npm install
-npm run dev
-```
-
-El backend sirve el frontend desde `Frontend/dist/` y la API desde `/api`.
-
-#### Paso 3: Exponer con ngrok
-
-```bash
+# HTTP API
 ngrok http 8080
+
+# WebSocket (en otra terminal o con un tunnel config file)
+ngrok http 9001
 ```
 
-La URL pública de ngrok tendrá todo: frontend + API + Swagger.
+### Con archivo de configuración ngrok (recomendado)
+
+```yaml
+# ngrok.yml
+tunnels:
+  api:
+    proto: http
+    addr: 8080
+  ws:
+    proto: http
+    addr: 9001
+```
+
+```bash
+ngrok start --all --config ngrok.yml
+```
+
+Actualizá `FRONTEND_URL` en `Backend/.env` con la URL de ngrok del API.
 
 ---
 

@@ -1,20 +1,26 @@
-{
+﻿{
   "info": {
     "name": "DANMA API",
-    "description": "Colección completa de endpoints para el proyecto DANMA - Bullet Hell Arena.",
+    "description": "Coleccion completa de endpoints para el proyecto DANMA - Bullet Hell Arena.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:5000",
+      "value": "http://localhost:8080",
       "type": "string"
     },
     {
       "key": "token",
       "value": "",
       "type": "string",
-      "description": "JWT obtenido al hacer Login. Se llena automáticamente con el script del endpoint Login."
+      "description": "Session ID obtenido al hacer Login. Se llena automaticamente con el script del endpoint Login."
+    },
+    {
+      "key": "room_id",
+      "value": "",
+      "type": "string",
+      "description": "UUID de sala. Se llena automaticamente al crear una sala."
     }
   ],
   "item": [
@@ -38,7 +44,7 @@
               "raw": "{\n  \"username\": \"TestPlayer\",\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Registra un nuevo usuario.\n\n**Validaciones:**\n- username: 3-11 caracteres, solo letras, números y guiones bajos\n- email: formato válido\n- password: mínimo 6 caracteres\n\n**Respuesta exitosa (200):** `\"Exitoso\"`"
+            "description": "Registra un nuevo usuario."
           }
         },
         {
@@ -51,7 +57,7 @@
                   "var json = pm.response.json();",
                   "if (json.token) {",
                   "    pm.collectionVariables.set('token', json.token);",
-                  "    console.log('Token guardado automáticamente.');",
+                  "    console.log('Token guardado automaticamente.');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -73,7 +79,7 @@
               "raw": "{\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Autentica al usuario y devuelve un JWT con 2 horas de vigencia.\n\nEl script de test guarda el token automáticamente en la variable `{{token}}` de la colección."
+            "description": "Autentica al usuario y devuelve un session ID. El script guarda el token en {{token}}."
           }
         },
         {
@@ -86,7 +92,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "auth"]
             },
-            "description": "Devuelve la lista de todos los usuarios registrados (sin contraseñas). Endpoint de desarrollo."
+            "description": "Devuelve la lista de todos los usuarios registrados (sin contrasenas). Endpoint de desarrollo."
           }
         }
       ]
@@ -106,7 +112,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "users", "2", "friend-request"]
             },
-            "description": "Envía una solicitud de amistad al usuario con el ID indicado en la URL.\n\n**Requiere:** JWT en el header `Authorization`.\n\n**Errores posibles:**\n- 400: Ya son amigos / solicitud pendiente existente / enviarse a sí mismo\n- 404: Usuario destino no encontrado"
+            "description": "Envia una solicitud de amistad al usuario con el ID indicado en la URL. Requiere Authorization header."
           }
         },
         {
@@ -121,7 +127,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "users", "1", "friend-requests"]
             },
-            "description": "Devuelve las solicitudes de amistad pendientes recibidas por el usuario cuyo ID se indica en la URL.\n\n**Requiere:** JWT del usuario dueño del ID (no podés consultar las solicitudes de otro)."
+            "description": "Devuelve las solicitudes de amistad pendientes recibidas por el usuario."
           }
         },
         {
@@ -136,7 +142,153 @@
               "host": ["{{base_url}}"],
               "path": ["api", "users", "friend-requests", "1", "accept"]
             },
-            "description": "Acepta la solicitud de amistad con el ID indicado. Crea la amistad en ambas direcciones.\n\n**Requiere:** JWT del usuario que recibió la solicitud.\n\n**Errores posibles:**\n- 404: Solicitud no encontrada\n- 401: La solicitud no es para el usuario autenticado\n- 400: La solicitud ya fue procesada"
+            "description": "Acepta la solicitud de amistad con el ID indicado."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rooms",
+      "description": "Endpoints para gestion de salas efimeras. Las salas se almacenan en Redis con TTL de 2 horas.",
+      "item": [
+        {
+          "name": "Create Room",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('room_id', json.id);",
+                  "    console.log('room_id guardado:', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rooms",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sala de prueba\",\n  \"map\": \"classic\",\n  \"maxPlayers\": 4,\n  \"isPublic\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Crea una sala efimera. Requiere autenticacion.\n\nCampos: name (3-30), map (default classic), maxPlayers (2-20), password (opcional), isPublic (default true).\n\nRespuesta 201: objeto sala. TTL 2 horas en Redis. Guarda el id en {{room_id}}."
+          }
+        },
+        {
+          "name": "Create Room (with password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rooms",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sala privada\",\n  \"map\": \"desert\",\n  \"maxPlayers\": 2,\n  \"password\": \"1234\",\n  \"isPublic\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Crea una sala privada con contrasena. No aparece en el listado publico."
+          }
+        },
+        {
+          "name": "List Public Rooms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rooms",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms"]
+            },
+            "description": "Devuelve hasta 50 salas publicas sin contrasena, ordenadas por mas reciente. No requiere autenticacion."
+          }
+        },
+        {
+          "name": "Get Room by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rooms/{{room_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms", "{{room_id}}"]
+            },
+            "description": "Devuelve los detalles de una sala especifica por su UUID. No requiere autenticacion.\n\nErrores: 400 roomId invalido, 404 no encontrada."
+          }
+        },
+        {
+          "name": "Join Room",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rooms/{{room_id}}/join",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms", "{{room_id}}", "join"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Valida contrasena (si aplica) y verifica que la sala no este llena. Devuelve el objeto sala si pasa.\n\nEl cliente debe conectarse luego por WebSocket y enviar { type: \"join-room\", roomId } para unirse al signaling.\n\nBody opcional: { \"password\": \"1234\" } si la sala tiene contrasena.\n\nErrores: 400 eres el host, 403 contrasena incorrecta, 404 sala no encontrada, 409 sala llena."
+          }
+        },
+        {
+          "name": "Join Room (with password)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rooms/{{room_id}}/join",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms", "{{room_id}}", "join"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"1234\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Igual que Join Room pero incluyendo contrasena para salas privadas."
+          }
+        },
+        {
+          "name": "Delete Room",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/rooms/{{room_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms", "{{room_id}}"]
+            },
+            "description": "Elimina una sala. Solo puede hacerlo el host que la creo.\n\nErrores: 400 roomId invalido, 403 no es el host, 404 no encontrada.\n\nRespuesta 200: { success: true }"
           }
         }
       ]

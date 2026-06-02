@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
@@ -10,5 +10,6 @@ COPY . .
 RUN mkdir -p /app/data
 
 EXPOSE 8080
+EXPOSE 9001
 
 CMD ["node", "src/index.js"]
