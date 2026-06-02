@@ -1,8 +1,22 @@
 services:
+  redis:
+    image: redis/redis-stack-server:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build: ./Backend
     ports:
       - "8080:8080"
+      - "9001:9001"
     env_file:
       - ./Backend/.env
     environment:
@@ -10,8 +24,13 @@ services:
       - PORT=8080
       - HOST=0.0.0.0
       - DB_PATH=/app/data/danmakrew.db
+      - REDIS_URL=redis://redis:6379
+      - WS_PORT=9001
     volumes:
       - sqlite_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -25,3 +44,4 @@ services:
 
 volumes:
   sqlite_data:
+  redis_data:
