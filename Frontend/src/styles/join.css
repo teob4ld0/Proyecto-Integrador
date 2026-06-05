@@ -1,0 +1,63 @@
+/* ===== JOIN SELECTION PAGE ===== */
+.code-input-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+/* The "CODE" button on top */
+.code-btn {
+  background-color: #cccccc;
+  color: #000;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.9rem;
+  border: 6px solid #000;
+  border-radius: 8px;
+  width: 300px;
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: inset 0 -6px 0 rgba(0,0,0,0.2);
+  transition: all 0.2s;
+  z-index: 2;
+}
+
+.code-btn:hover {
+  transform: translateY(-4px);
+  background-color: #ffffff;
+  box-shadow: inset 0 -6px 0 rgba(0,0,0,0.1);
+}
+
+.code-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
+}
+
+/* U-shaped input below the CODE button */
+.code-input {
+  width: 250px;
+  height: 60px;
+  background-color: transparent;
+  border: 4px solid #777;
+  border-top: none;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  margin-top: -5px;
+  color: var(--text);
+  font-size: 1.2rem;
+  text-align: center;
+  outline: none;
+  padding-top: 10px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.code-input:focus {
+  border-color: var(--secondary);
+  box-shadow: 0 10px 20px rgba(0, 240, 255, 0.15);
+}
+
+.code-input::placeholder {
+  color: #444;
+  letter-spacing: 0;
+}

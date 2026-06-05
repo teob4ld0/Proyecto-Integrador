@@ -1,0 +1,77 @@
+/* ===== RESET & VARIABLES ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-dark: #0a0a0f;
+  --bg-card: #12121a;
+  --bg-card-hover: #1a1a2e;
+  --primary: #ff2d55;
+  --primary-glow: #ff2d5580;
+  --secondary: #00f0ff;
+  --secondary-glow: #00f0ff60;
+  --accent: #bf00ff;
+  --accent-glow: #bf00ff60;
+  --text: #e0e0e0;
+  --text-muted: #888;
+  --danger: #ff4444;
+  --success: #00ff88;
+  --border: #2a2a3e;
+}
+
+body {
+  font-family: 'Orbitron', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ===== ANIMATED BACKGROUND ===== */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 20% 50%, var(--primary-glow) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, var(--secondary-glow) 0%, transparent 50%),
+    radial-gradient(circle at 50% 80%, var(--accent-glow) 0%, transparent 50%);
+  z-index: -1;
+  animation: bgPulse 8s ease-in-out infinite alternate;
+}
+
+/* ===== KEYFRAMES ===== */
+@keyframes bgPulse {
+  0%   { opacity: 0.3; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+  10%       { opacity: 1; }
+  90%       { opacity: 1; }
+  100%      { transform: translateY(-10vh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ===== BULLET PARTICLES ===== */
+.bullet-particle {
+  position: fixed;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  animation: float linear infinite;
+}

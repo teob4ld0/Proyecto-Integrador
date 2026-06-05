@@ -1,0 +1,42 @@
+/* ===== RESPONSIVE ===== */
+@media (max-width: 950px) {
+  .slots-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .menu-title {
+    font-size: 2.5rem;
+  }
+
+  .menu-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .menu-btn {
+    width: 260px;
+  }
+}
+
+@media (max-width: 520px) {
+  .slots-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .danma-title {
+    font-size: 2.2rem;
+  }
+
+  .auth-card {
+    padding: 1.5rem;
+  }
+
+  .home-nav {
+    flex-direction: column;
+    align-items: center;
+  }
+}

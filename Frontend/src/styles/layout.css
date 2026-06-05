@@ -1,0 +1,98 @@
+/* ===== GENERAL LAYOUT ===== */
+.page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.menu-page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== BACK ARROW BUTTON ===== */
+.back-arrow-btn {
+  position: absolute;
+  top: 2rem;
+  left: 2rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.2s, transform 0.2s;
+}
+
+.back-arrow-btn svg {
+  width: 45px;
+  height: 45px;
+}
+
+.back-arrow-btn:hover {
+  color: var(--text);
+  transform: translateX(-5px);
+}
+
+/* ===== MENU HEADER & TITLES ===== */
+.menu-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.menu-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 4rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  margin-bottom: 0;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 2px #fff;
+}
+
+.menu-subtitle {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  margin-top: 15px;
+  color: #888;
+}
+
+
+
+/* ===== TOP RIGHT ICON ACTIONS ===== */
+.top-right-actions {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  display: flex;
+  gap: 1.5rem;
+  z-index: 10;
+}
+
+.icon-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.icon-action-btn svg {
+  width: 40px;
+  height: 40px;
+}
+
+.icon-action-btn:hover {
+  color: var(--text);
+  transform: scale(1.1) translateY(-2px);
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.4));
+}
