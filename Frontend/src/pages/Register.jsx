@@ -3,6 +3,25 @@ import { Link, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
 import { registerUser } from '../services/api';
 
+function validateRegisterForm({ username, email, password }) {
+  const cleanUsername = username.trim();
+  const cleanEmail = email.trim();
+
+  if (!/^[a-zA-Z0-9_]{3,11}$/.test(cleanUsername)) {
+    return 'Username: 3-11 caracteres, solo letras, números y _';
+  }
+
+  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+    return 'Ingresá un email válido.';
+  }
+
+  if ((password || '').length < 6) {
+    return 'La contraseña debe tener al menos 6 caracteres.';
+  }
+
+  return '';
+}
+
 export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ username: '', email: '', password: '' });
@@ -18,10 +37,23 @@ export default function Register() {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    const payload = {
+      username: form.username.trim(),
+      email: form.email.trim(),
+      password: form.password,
+    };
+
+    const validationError = validateRegisterForm(payload);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await registerUser(form);
+      await registerUser(payload);
       setSuccess('Account created! Check your email to verify your account.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
@@ -49,12 +81,12 @@ export default function Register() {
       </div>
 
       <div className="auth-card">
-        <h2>Sign In</h2>
+        <h2>Create Account</h2>
 
         {error && <div className="message error">{error}</div>}
         {success && <div className="message success">{success}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="form-group">
             <label htmlFor="username">Username</label>
             <input
@@ -65,10 +97,6 @@ export default function Register() {
               value={form.username}
               onChange={handleChange}
               required
-              minLength={3}
-              maxLength={11}
-              pattern="^[a-zA-Z0-9_]+$"
-              title="Letters, numbers and underscores only"
             />
           </div>
 
@@ -95,7 +123,6 @@ export default function Register() {
               value={form.password}
               onChange={handleChange}
               required
-              minLength={6}
             />
           </div>
 
