@@ -1,10 +1,38 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
+import { joinRoomByCode } from '../services/api';
 
 export default function JoinSelection() {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState('');
+  const [loadingCodeJoin, setLoadingCodeJoin] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleJoinByCode = async () => {
+    const normalized = roomCode.trim().toUpperCase();
+    if (!normalized) {
+      setError('Ingresa un código de sala.');
+      return;
+    }
+
+    if (normalized.length !== 6) {
+      setError('El código debe tener 6 caracteres.');
+      return;
+    }
+
+    setLoadingCodeJoin(true);
+    setError('');
+
+    try {
+      const room = await joinRoomByCode(normalized);
+      navigate('/character-selection', { state: { roomId: room.id, isHost: false } });
+    } catch (err) {
+      setError(err.message || 'No se pudo unir a la sala.');
+    } finally {
+      setLoadingCodeJoin(false);
+    }
+  };
 
   return (
     <div className="menu-page-container">
@@ -25,12 +53,13 @@ export default function JoinSelection() {
       </div>
 
       <div className="menu-buttons-container">
+        {error && <div className="message error" style={{ marginBottom: '1rem' }}>{error}</div>}
         
         {/* Fila superior (CREATE y JOIN) */}
         <div className="menu-row">
           <button 
             className="menu-btn" 
-            onClick={() => navigate('/character-selection')} 
+            onClick={() => navigate('/character-selection', { state: { isHost: true } })} 
           >
             CREATE
           </button>
@@ -48,9 +77,10 @@ export default function JoinSelection() {
           {/* El "botón" superior que dice CODE */}
           <button 
             className="code-btn" 
-            onClick={() => console.log('Backend: Lógica para unirse usando el código:', roomCode)}
+            onClick={handleJoinByCode}
+            disabled={loadingCodeJoin}
           >
-            CODE
+            {loadingCodeJoin ? 'JOINING...' : 'CODE'}
           </button>
           
           {/* El input con forma de U abajo */}
@@ -58,7 +88,16 @@ export default function JoinSelection() {
             type="text" 
             className="code-input"
             value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+            onChange={(e) => {
+              setRoomCode(e.target.value.toUpperCase());
+              if (error) setError('');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleJoinByCode();
+              }
+            }}
             maxLength={6} /* Limite de caracteres de ejemplo */
             placeholder="..."
           />

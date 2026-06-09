@@ -41,6 +41,14 @@ function roomKey(roomId) {
   return `room:${roomId}`;
 }
 
+function roomCode(roomId) {
+  return roomId.slice(0, 6).toUpperCase();
+}
+
+function roomCodeKey(code) {
+  return `room:code:${code}`;
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 async function roomRoutes(fastify) {
@@ -74,6 +82,7 @@ async function roomRoutes(fastify) {
 
     const pipeline = redis.pipeline();
     pipeline.set(roomKey(id), JSON.stringify(room), 'EX', ROOM_TTL);
+    pipeline.set(roomCodeKey(roomCode(id)), id, 'EX', ROOM_TTL);
 
     if (hasPassword) {
       // Store password separately so it never leaks through the room object
@@ -130,6 +139,34 @@ async function roomRoutes(fastify) {
 
     if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
       return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) {
+      return reply.status(404).send({ message: 'Room not found' });
+    }
+
+    try {
+      return reply.send(JSON.parse(raw));
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+  });
+
+  /**
+   * GET /api/rooms/by-code/:code
+   * Resolve a 6-char lobby code to a room.
+   */
+  fastify.get('/rooms/by-code/:code', async (request, reply) => {
+    const normalizedCode = String(request.params.code || '').trim().toUpperCase();
+
+    if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) {
+      return reply.status(400).send({ message: 'Invalid room code' });
+    }
+
+    const roomId = await redis.get(roomCodeKey(normalizedCode));
+    if (!roomId) {
+      return reply.status(404).send({ message: 'Room not found' });
     }
 
     const raw = await redis.get(roomKey(roomId));
@@ -227,6 +264,7 @@ async function roomRoutes(fastify) {
 
     const pipeline = redis.pipeline();
     pipeline.del(roomKey(roomId));
+    pipeline.del(roomCodeKey(roomCode(roomId)));
     pipeline.zrem(PUBLIC_ROOMS_KEY, roomId);
     await pipeline.exec();
 

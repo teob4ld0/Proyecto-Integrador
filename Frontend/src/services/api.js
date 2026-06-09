@@ -122,6 +122,101 @@ export async function getPublicRooms() {
   }
 }
 
+export async function createRoom({
+  name = 'NO MERCY LOBBY',
+  map = 'classic',
+  maxPlayers = 4,
+  password,
+  isPublic = true,
+} = {}) {
+  const token = localStorage.getItem('danma_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/rooms`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name, map, maxPlayers, password, isPublic }),
+  });
+
+  const data = await res.text();
+
+  if (!res.ok) {
+    let message;
+    try {
+      const json = JSON.parse(data);
+      message = json.message || data;
+    } catch {
+      message = data;
+    }
+    throw new Error(message);
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+}
+
+export async function getRoom(roomId) {
+  const res = await fetch(`${API_BASE}/rooms/${roomId}`, {
+    headers: {
+      'ngrok-skip-browser-warning': 'true',
+    },
+  });
+
+  const data = await res.text();
+
+  if (!res.ok) {
+    let message;
+    try {
+      const json = JSON.parse(data);
+      message = json.message || data;
+    } catch {
+      message = data;
+    }
+    throw new Error(message);
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+}
+
+export async function getRoomByCode(code) {
+  const normalizedCode = String(code || '').trim().toUpperCase();
+  const res = await fetch(`${API_BASE}/rooms/by-code/${encodeURIComponent(normalizedCode)}`, {
+    headers: {
+      'ngrok-skip-browser-warning': 'true',
+    },
+  });
+
+  const data = await res.text();
+
+  if (!res.ok) {
+    let message;
+    try {
+      const json = JSON.parse(data);
+      message = json.message || data;
+    } catch {
+      message = data;
+    }
+    throw new Error(message);
+  }
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+}
+
 export async function joinRoom(roomId, password = '') {
   const token = localStorage.getItem('danma_token');
   const headers = {
@@ -154,4 +249,10 @@ export async function joinRoom(roomId, password = '') {
   } catch {
     return data;
   }
+}
+
+export async function joinRoomByCode(code, password = '') {
+  const room = await getRoomByCode(code);
+  await joinRoom(room.id, password);
+  return room;
 }
