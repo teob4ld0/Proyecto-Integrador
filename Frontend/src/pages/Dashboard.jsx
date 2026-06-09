@@ -45,8 +45,8 @@ export default function Dashboard() {
 
         {/* Fila inferior (Play) */}
         <div className="menu-row">
-          <button className="menu-btn" onClick={() => console.log('Play!')}>
-            PLAY
+            <button className="menu-btn" onClick={() => navigate('/join')}>          
+              PLAY
           </button>
         </div>
       </div>

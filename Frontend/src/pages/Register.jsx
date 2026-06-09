@@ -1,24 +1,34 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
+import { registerUser } from '../services/api';
 
 export default function Register() {
   const navigate = useNavigate();
-  
-  // Estado puramente visual para que el formulario funcione en el frontend
   const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Le dejamos la tarea al del backend
-    console.log('Backend: Hacer fetch a la API de registro con:', form);
-    
-    // Simulamos que se registró y lo mandamos a la pantalla de Log In
-    navigate('/login');
+    setError('');
+    setSuccess('');
+    setLoading(true);
+
+    try {
+      await registerUser(form);
+      setSuccess('Account created! Check your email to verify your account.');
+      setTimeout(() => navigate('/login'), 3000);
+    } catch (err) {
+      setError(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -40,6 +50,9 @@ export default function Register() {
 
       <div className="auth-card">
         <h2>Sign In</h2>
+
+        {error && <div className="message error">{error}</div>}
+        {success && <div className="message success">{success}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -86,9 +99,8 @@ export default function Register() {
             />
           </div>
 
-          {/* El botón estético que usa la nueva clase del CSS */}
-          <button type="submit" className="btn-login-submit">
-            Create Account
+          <button type="submit" className="btn-login-submit" disabled={loading}>
+            {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
 
