@@ -63,9 +63,11 @@ function getHost(roomId) {
 }
 
 async function cleanupRoom(roomId) {
+  const roomCode = roomId.slice(0, 6).toUpperCase();
   const pipeline = redis.pipeline();
   pipeline.del(`room:${roomId}`);
   pipeline.del(`room:${roomId}:pwd`);
+  pipeline.del(`room:code:${roomCode}`);
   pipeline.zrem('rooms:public', roomId);
   await pipeline.exec().catch((err) =>
     console.error('[Signal] Redis cleanup error for room', roomId, err.message),

@@ -23,7 +23,7 @@ export default function Login() {
       if (data.token) {
         localStorage.setItem('danma_token', data.token)
       }
-      // Redirección al Dashboard adaptado
+      // username ya se guarda en api.js automáticamente
       navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Login failed')

@@ -1,33 +1,73 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
+import { createRoom, getRoom, joinRoom, updateRoom, getCurrentUser } from '../services/api';
+
+function getWsSignalUrl() {
+  const wsEnv = (import.meta.env.VITE_WS_URL || '').trim();
+  if (wsEnv) {
+    return wsEnv.endsWith('/signal') ? wsEnv : `${wsEnv.replace(/\/$/, '')}/signal`;
+  }
+
+  const apiEnv = (import.meta.env.VITE_API_URL || '').trim();
+  if (apiEnv) {
+    try {
+      const parsed = new URL(apiEnv);
+      const protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      const isLocalApiPort = parsed.port === '8080';
+      const port = isLocalApiPort ? ':9001' : parsed.port ? `:${parsed.port}` : '';
+      return `${protocol}//${parsed.hostname}${port}/signal`;
+    } catch {
+      // fall through to local default
+    }
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${protocol}://${window.location.hostname}:9001/signal`;
+}
 
 export default function CharacterSelection() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const token = localStorage.getItem('danma_token');
+  const flowState = location.state || {};
+  const initialIsHost = flowState.isHost !== false;
   
-  // Character state for Slot 1 (YOU)
   const [slot1Char, setSlot1Char] = useState('blue'); 
-  // Settings Sidebar State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isOnlyFriends, setIsOnlyFriends] = useState(true);
   const [lobbyCode, setLobbyCode] = useState('');
   const [copied, setCopied] = useState(false);
-  const isLeader = true; // Assume current player is leader for now
+  const [room, setRoom] = useState(null);
+  const [roomError, setRoomError] = useState('');
+  const [friendsOnly, setFriendsOnly] = useState(false);
+  const [playerName, setPlayerName] = useState(
+    localStorage.getItem('danma_username') || 'PLAYER'
+  );
 
-  // State for other slots (2, 3, 4)
-  const [otherSlots, setOtherSlots] = useState([
-    { id: 2, state: 'empty', char: 'red' },
-    { id: 3, state: 'empty', char: 'blue' },
-    { id: 4, state: 'empty', char: 'red' }
-  ]);
+  const players = room?.players || 1;
+  const maxPlayers = room?.maxPlayers || 4;
+  const occupiedSlots = Math.max(0, players - 1);
+  const joinerSlots = useMemo(
+    () => Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => i < occupiedSlots),
+    [maxPlayers, occupiedSlots],
+  );
 
-  // Handle keyboard events to change character in Slot 1
+  // Fetch username if not in localStorage
   useEffect(() => {
-    // Generate a random 6-character code for the lobby
-    setLobbyCode(Math.random().toString(36).substring(2, 8).toUpperCase());
+    if (!localStorage.getItem('danma_username') && token) {
+      getCurrentUser()
+        .then((user) => {
+          if (user.username) {
+            localStorage.setItem('danma_username', user.username);
+            setPlayerName(user.username);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
+  useEffect(() => {
     const handleKeyDown = (e) => {
-      // Prevent default scrolling for up/down arrows
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
@@ -38,36 +78,138 @@ export default function CharacterSelection() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    let activeWs;
+    let refreshTimer;
+    let cancelled = false;
+
+    const bootstrapRoom = async () => {
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      try {
+        setRoomError('');
+        const isHost = flowState.isHost !== false;
+        let roomData;
+        let roomId = flowState.roomId || '';
+
+        if (isHost) {
+          if (roomId) {
+            roomData = await getRoom(roomId);
+          } else {
+            roomData = await createRoom({
+              name: 'NO MERCY LOBBY',
+              map: 'classic',
+              maxPlayers: 5,
+              isPublic: !friendsOnly,
+            });
+            roomId = roomData.id;
+          }
+        } else {
+          if (!roomId) {
+            throw new Error('Missing room id');
+          }
+
+          await joinRoom(roomId);
+          roomData = await getRoom(roomId);
+        }
+
+        if (cancelled) return;
+        setRoom(roomData);
+        setLobbyCode(roomData.id.slice(0, 6).toUpperCase());
+        setFriendsOnly(!roomData.isPublic);
+
+        const wsUrl = `${getWsSignalUrl()}?token=${encodeURIComponent(token)}`;
+        activeWs = new WebSocket(wsUrl);
+
+        activeWs.onopen = () => {
+          const type = isHost ? 'host-room' : 'join-room';
+          activeWs.send(JSON.stringify({ type, roomId: roomData.id }));
+        };
+
+        activeWs.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === 'player-join-request' || message.type === 'room-joined') {
+              getRoom(roomData.id).then((latest) => {
+                if (!cancelled) setRoom(latest);
+              }).catch(() => {});
+            }
+            if (message.type === 'host-disconnected') {
+              setRoomError('Host disconnected.');
+              navigate('/join');
+            }
+            if (message.type === 'error') {
+              setRoomError(message.message || 'Socket error');
+            }
+          } catch {
+            // ignore malformed message
+          }
+        };
+
+        activeWs.onclose = () => {
+          // no-op: polling keeps UI updated while connected to the app
+        };
+
+        refreshTimer = setInterval(() => {
+          getRoom(roomData.id)
+            .then((latest) => {
+              if (!cancelled) setRoom(latest);
+            })
+            .catch(() => {});
+
+          if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+            activeWs.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 2000);
+      } catch (err) {
+        if (!cancelled) {
+          setRoomError(err.message || 'Could not initialize room');
+        }
+      }
+    };
+
+    bootstrapRoom();
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+        activeWs.close();
+      }
+    };
+  }, [flowState.isHost, flowState.roomId, navigate, token]);
+
   const changeSlot1Char = () => {
     setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
   };
 
-  const handleInvite = (index) => {
-    setOtherSlots(prev => prev.map((slot, i) => 
-      i === index ? { ...slot, state: 'connecting' } : slot
-    ));
-    
-    // Simulate connection delay then join
-    setTimeout(() => {
-      setOtherSlots(prev => prev.map((slot, i) => 
-        i === index ? { ...slot, state: 'occupied' } : slot
-      ));
-    }, 2000);
-  };
-
   const toggleSettings = () => {
-    if (isLeader) {
-      setIsSettingsOpen(!isSettingsOpen);
-    }
+    if (initialIsHost) setIsSettingsOpen(!isSettingsOpen);
   };
 
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(lobbyCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset text after 2s
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy code: ', err);
+    }
+  };
+
+  const handleToggleFriendsOnly = async () => {
+    if (!room || !initialIsHost) return;
+    const newValue = !friendsOnly;
+    setFriendsOnly(newValue);
+    try {
+      const updated = await updateRoom(room.id, { isPublic: !newValue });
+      setRoom(updated);
+    } catch (err) {
+      console.error('Failed to update room:', err);
+      setFriendsOnly(!newValue); // revert on error
     }
   };
 
@@ -84,7 +226,7 @@ export default function CharacterSelection() {
         </button>
 
         <div className="cs-level-box">
-          LEVEL NAME
+          {room?.name || 'LOBBY'}
         </div>
 
         <div className="cs-header-icons">
@@ -106,12 +248,18 @@ export default function CharacterSelection() {
         </div>
       </header>
 
+      {roomError && (
+        <div className="message error" style={{ margin: '0 auto 1rem', maxWidth: '680px' }}>
+          {roomError}
+        </div>
+      )}
+
       {/* MAIN GRID */}
       <div className="cs-main-grid">
         
-        {/* SLOT 1 (Occupied) */}
+        {/* SLOT 1 (Host - always leftmost) */}
         <div className="cs-slot">
-          <div className="cs-slot-header">PLY NAME</div>
+          <div className="cs-slot-header">{playerName}</div>
           <div className="cs-slot-body">
             <div className="cs-select-arrow up" onClick={changeSlot1Char}></div>
             <div className="cs-character-display">
@@ -126,32 +274,26 @@ export default function CharacterSelection() {
           </div>
         </div>
 
-        {/* OTHER SLOTS (2, 3, 4) */}
-        {otherSlots.map((slot, index) => (
-          <div className="cs-slot" key={slot.id}>
+        {/* OTHER SLOTS (joiners fill left to right) */}
+        {joinerSlots.map((isOccupied, index) => (
+          <div className="cs-slot" key={index}>
             <div className="cs-slot-header">
-              {slot.state === 'empty' && 'FRIENDLESS'}
-              {slot.state === 'connecting' && <span style={{lineHeight: 1.2}}>BITCH<br/>CONNECTING...</span>}
-              {slot.state === 'occupied' && 'NEW PLY'}
+              {isOccupied ? 'PLAYER READY' : 'WAITING...'}
             </div>
             
-            {slot.state === 'empty' && (
+            {!isOccupied && (
               <div className="cs-slot-body empty">
-                <button className="cs-invite-btn" onClick={() => handleInvite(index)}>INVITE</button>
+                <button className="cs-invite-btn" disabled style={{ opacity: 0.6, cursor: 'default' }}>
+                  OPEN SLOT
+                </button>
               </div>
             )}
 
-            {slot.state === 'connecting' && (
-              <div className="cs-slot-body connecting">
-                <div className="cs-spinner"></div>
-              </div>
-            )}
-
-            {slot.state === 'occupied' && (
+            {isOccupied && (
               <div className="cs-slot-body">
                 <div className="cs-select-arrow up" style={{ opacity: 0.5, cursor: 'not-allowed' }}></div>
                 <div className="cs-character-display">
-                  <div className={`cs-character-box ${slot.char}`}></div>
+                  <div className="cs-character-box blue"></div>
                 </div>
                 <div className="cs-select-arrow down" style={{ opacity: 0.5, cursor: 'not-allowed' }}></div>
               </div>
@@ -176,21 +318,18 @@ export default function CharacterSelection() {
         </button>
 
         <div className="cs-settings-row">
-          <button className="cs-settings-btn" style={{ flex: 1 }} onClick={() => setIsOnlyFriends(!isOnlyFriends)}>
-            ONLY FRIENDS
-          </button>
-          <button className="cs-settings-btn small" onClick={() => setIsOnlyFriends(!isOnlyFriends)}>
-            {isOnlyFriends && (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ width: '24px', height: '24px' }}>
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            )}
-          </button>
+          <button className="cs-settings-btn">PLAYERS</button>
+          <button className="cs-settings-btn">{players}/{maxPlayers}</button>
         </div>
 
         <div className="cs-settings-row">
-          <button className="cs-settings-btn">SELECT LEVEL</button>
-          <button className="cs-settings-btn">LEVEL NAME</button>
+          <button className="cs-settings-btn">FRIENDS ONLY</button>
+          <button 
+            className={`cs-settings-btn ${friendsOnly ? 'active' : ''}`} 
+            onClick={handleToggleFriendsOnly}
+          >
+            {friendsOnly ? '✓ ON' : '✗ OFF'}
+          </button>
         </div>
 
         <div className="cs-settings-row">

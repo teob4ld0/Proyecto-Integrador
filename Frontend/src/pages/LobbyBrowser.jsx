@@ -11,19 +11,30 @@ export default function LobbyBrowser() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchRooms();
+    fetchRooms(true);
+
+    const intervalId = setInterval(() => {
+      fetchRooms(false);
+    }, 2000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
-  const fetchRooms = async () => {
+  const fetchRooms = async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       const rooms = await getPublicRooms();
       setLobbies(rooms);
+      setError(null);
     } catch (err) {
       console.error('Failed to fetch rooms:', err);
       setError('Error loading lobbies.');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -32,7 +43,7 @@ export default function LobbyBrowser() {
       try {
         const result = await joinRoom(selectedLobbyId);
         console.log('Joined lobby successfully:', result);
-        navigate('/character-selection');
+        navigate('/character-selection', { state: { roomId: selectedLobbyId, isHost: false } });
       } catch (err) {
         console.error('Error joining lobby:', err);
         alert('Could not join room: ' + err.message);
@@ -76,7 +87,7 @@ export default function LobbyBrowser() {
                 onClick={() => setSelectedLobbyId(lobby.id)}
               >
                 <div className="lb-box lvl">{lobby.name}</div>
-                <div className="lb-box admin">{lobby.hostId ? lobby.hostId.substring(0, 8) : 'Host'}</div>
+                <div className="lb-box admin">{lobby.hostName || lobby.hostId?.substring(0, 8) || 'Host'}</div>
                 <div className="lb-box players">{lobby.players}/{lobby.maxPlayers}</div>
               </div>
             ))}
