@@ -15,6 +15,7 @@ const createRoomSchema = z.object({
   maxPlayers: z.number().int().min(2).max(20).default(8),
   password: z.string().max(64).optional(),
   isPublic: z.boolean().default(true),
+  difficulty: z.enum(['normal', 'difficult', 'no_mercy']).default('normal'),
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
