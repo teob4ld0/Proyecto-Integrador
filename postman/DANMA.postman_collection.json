@@ -1,8 +1,14 @@
-﻿{
+{
   "info": {
     "name": "DANMA API",
     "description": "Coleccion completa de endpoints para el proyecto DANMA - Bullet Hell Arena.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
   },
   "variable": [
     {
@@ -14,7 +20,13 @@
       "key": "token",
       "value": "",
       "type": "string",
-      "description": "Session ID obtenido al hacer Login. Se llena automaticamente con el script del endpoint Login."
+      "description": "Session ID obtenido al hacer Login. Se llena automaticamente."
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string",
+      "description": "ID del usuario autenticado. Se llena automaticamente al hacer Login."
     },
     {
       "key": "room_id",
@@ -30,6 +42,7 @@
         {
           "name": "Register",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
@@ -44,7 +57,7 @@
               "raw": "{\n  \"username\": \"TestPlayer\",\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Registra un nuevo usuario."
+            "description": "Registra un nuevo usuario. No requiere autenticacion."
           }
         },
         {
@@ -57,7 +70,11 @@
                   "var json = pm.response.json();",
                   "if (json.token) {",
                   "    pm.collectionVariables.set('token', json.token);",
-                  "    console.log('Token guardado automaticamente.');",
+                  "    console.log('[DANMA] token guardado:', json.token);",
+                  "}",
+                  "if (json.userId) {",
+                  "    pm.collectionVariables.set('userId', json.userId);",
+                  "    console.log('[DANMA] userId guardado:', json.userId);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -65,6 +82,7 @@
             }
           ],
           "request": {
+            "auth": { "type": "noauth" },
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
@@ -79,12 +97,39 @@
               "raw": "{\n  \"email\": \"test@danma.gg\",\n  \"password\": \"secret123\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Autentica al usuario y devuelve un session ID. El script guarda el token en {{token}}."
+            "description": "Autentica al usuario. Guarda automaticamente {{token}} y {{userId}} para el resto de la coleccion."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Invalida la sesion activa. Requiere autenticacion (usa {{token}} heredado)."
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Devuelve la informacion del usuario autenticado."
           }
         },
         {
           "name": "Get All Users (debug)",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
             "url": {
@@ -92,7 +137,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "auth"]
             },
-            "description": "Devuelve la lista de todos los usuarios registrados (sin contrasenas). Endpoint de desarrollo."
+            "description": "Lista todos los usuarios. Endpoint de desarrollo, no requiere auth."
           }
         }
       ]
@@ -104,39 +149,33 @@
           "name": "Send Friend Request",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" }
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/api/users/2/friend-request",
               "host": ["{{base_url}}"],
               "path": ["api", "users", "2", "friend-request"]
             },
-            "description": "Envia una solicitud de amistad al usuario con el ID indicado en la URL. Requiere Authorization header."
+            "description": "Envia una solicitud de amistad al usuario con el ID indicado en la URL."
           }
         },
         {
           "name": "Get Pending Friend Requests",
           "request": {
             "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" }
-            ],
+            "header": [],
             "url": {
-              "raw": "{{base_url}}/api/users/1/friend-requests",
+              "raw": "{{base_url}}/api/users/{{userId}}/friend-requests",
               "host": ["{{base_url}}"],
-              "path": ["api", "users", "1", "friend-requests"]
+              "path": ["api", "users", "{{userId}}", "friend-requests"]
             },
-            "description": "Devuelve las solicitudes de amistad pendientes recibidas por el usuario."
+            "description": "Devuelve las solicitudes de amistad pendientes del usuario autenticado."
           }
         },
         {
           "name": "Accept Friend Request",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" }
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/api/users/friend-requests/1/accept",
               "host": ["{{base_url}}"],
@@ -149,7 +188,7 @@
     },
     {
       "name": "Rooms",
-      "description": "Endpoints para gestion de salas efimeras. Las salas se almacenan en Redis con TTL de 2 horas.",
+      "description": "Endpoints para gestion de salas efimeras (Redis, TTL 2h). Todos los que modifican estado requieren auth heredada de la coleccion.",
       "item": [
         {
           "name": "Create Room",
@@ -161,7 +200,7 @@
                   "var json = pm.response.json();",
                   "if (json.id) {",
                   "    pm.collectionVariables.set('room_id', json.id);",
-                  "    console.log('room_id guardado:', json.id);",
+                  "    console.log('[DANMA] room_id guardado:', json.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -171,8 +210,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rooms",
@@ -184,7 +222,7 @@
               "raw": "{\n  \"name\": \"Sala de prueba\",\n  \"map\": \"classic\",\n  \"maxPlayers\": 4,\n  \"isPublic\": true\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Crea una sala efimera. Requiere autenticacion.\n\nCampos: name (3-30), map (default classic), maxPlayers (2-20), password (opcional), isPublic (default true).\n\nRespuesta 201: objeto sala. TTL 2 horas en Redis. Guarda el id en {{room_id}}."
+            "description": "Crea una sala efimera. Respuesta 201 con objeto sala. Guarda {{room_id}} automaticamente.\n\nCampos: name (3-30), map, maxPlayers (2-20), password (opcional), isPublic, difficulty (normal|difficult|no_mercy)."
           }
         },
         {
@@ -192,8 +230,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rooms",
@@ -211,6 +248,7 @@
         {
           "name": "List Public Rooms",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
             "url": {
@@ -218,12 +256,13 @@
               "host": ["{{base_url}}"],
               "path": ["api", "rooms"]
             },
-            "description": "Devuelve hasta 50 salas publicas sin contrasena, ordenadas por mas reciente. No requiere autenticacion."
+            "description": "Devuelve hasta 50 salas publicas sin contrasena, ordenadas por mas reciente."
           }
         },
         {
           "name": "Get Room by ID",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
             "url": {
@@ -231,7 +270,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "rooms", "{{room_id}}"]
             },
-            "description": "Devuelve los detalles de una sala especifica por su UUID. No requiere autenticacion.\n\nErrores: 400 roomId invalido, 404 no encontrada."
+            "description": "Devuelve detalles de una sala por UUID. Incluye players[] y playersCount."
           }
         },
         {
@@ -239,8 +278,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rooms/{{room_id}}/join",
@@ -252,7 +290,7 @@
               "raw": "{}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Valida contrasena (si aplica) y verifica que la sala no este llena. Devuelve el objeto sala si pasa.\n\nEl cliente debe conectarse luego por WebSocket y enviar { type: \"join-room\", roomId } para unirse al signaling.\n\nBody opcional: { \"password\": \"1234\" } si la sala tiene contrasena.\n\nErrores: 400 eres el host, 403 contrasena incorrecta, 404 sala no encontrada, 409 sala llena."
+            "description": "Une al usuario autenticado a la sala. Sale automaticamente de su sala anterior si estaba en una.\n\nDevuelve { room } con players[] y playersCount actualizados.\n\nErrores: 400 eres el host, 403 contrasena incorrecta, 404 no encontrada, 409 sala llena."
           }
         },
         {
@@ -260,8 +298,7 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{token}}" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "url": {
               "raw": "{{base_url}}/api/rooms/{{room_id}}/join",
@@ -273,22 +310,33 @@
               "raw": "{\n  \"password\": \"1234\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Igual que Join Room pero incluyendo contrasena para salas privadas."
+            "description": "Igual que Join Room pero con contrasena para salas privadas."
+          }
+        },
+        {
+          "name": "Leave Room",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/rooms/{{room_id}}/join",
+              "host": ["{{base_url}}"],
+              "path": ["api", "rooms", "{{room_id}}", "join"]
+            },
+            "description": "Sale de la sala. Remueve al usuario del players[] y actualiza playersCount.\n\nEl host no puede usar este endpoint — debe borrar la sala con DELETE /rooms/:roomId.\n\nErrores: 400 eres el host, 404 sala no encontrada."
           }
         },
         {
           "name": "Delete Room",
           "request": {
             "method": "DELETE",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{token}}" }
-            ],
+            "header": [],
             "url": {
               "raw": "{{base_url}}/api/rooms/{{room_id}}",
               "host": ["{{base_url}}"],
               "path": ["api", "rooms", "{{room_id}}"]
             },
-            "description": "Elimina una sala. Solo puede hacerlo el host que la creo.\n\nErrores: 400 roomId invalido, 403 no es el host, 404 no encontrada.\n\nRespuesta 200: { success: true }"
+            "description": "Elimina la sala. Solo puede hacerlo el host.\n\nErrores: 400 roomId invalido, 403 no es el host, 404 no encontrada."
           }
         }
       ]

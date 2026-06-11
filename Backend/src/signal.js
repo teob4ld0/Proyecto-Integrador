@@ -24,6 +24,7 @@
 const uWS = require('uWebSockets.js');
 const redis = require('./config/redis');
 const lucia = require('./config/auth');
+const { addPlayer, removePlayer, getPlayerRoom } = require('./utils/roomUtils');
 
 const WS_PORT = parseInt(process.env.WS_PORT || '9001', 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -73,22 +74,6 @@ async function cleanupRoom(roomId) {
     console.error('[Signal] Redis cleanup error for room', roomId, err.message),
   );
   rooms.delete(roomId);
-}
-
-/**
- * Atomically update the `players` field in the room JSON stored in Redis.
- * Uses KEEPTTL so the expiry is not affected.
- */
-async function updatePlayerCount(roomId, delta) {
-  try {
-    const raw = await redis.get(`room:${roomId}`);
-    if (!raw) return;
-    const room = JSON.parse(raw);
-    room.players = Math.max(1, (room.players || 1) + delta);
-    await redis.set(`room:${roomId}`, JSON.stringify(room), 'KEEPTTL');
-  } catch (err) {
-    console.error('[Signal] Failed to update player count for room', roomId, err.message);
-  }
 }
 
 /**
@@ -236,26 +221,32 @@ app.ws('/signal', {
           return sendError(ws, 'Room has no active host');
         }
 
-        if (joinTarget.players >= joinTarget.maxPlayers) {
+        if ((joinTarget.playersCount ?? joinTarget.players?.length ?? 1) >= joinTarget.maxPlayers) {
           return sendError(ws, 'Room is full');
         }
 
         // Leave previous room if any
         if (ws.roomId) {
           rooms.get(ws.roomId)?.delete(ws);
-          await updatePlayerCount(ws.roomId, -1);
+          const prevRoom = await removePlayer(ws.roomId, ws.userId);
+          if (prevRoom) broadcast(ws.roomId, { type: 'room-updated', players: prevRoom.players, playersCount: prevRoom.playersCount });
         }
 
         rooms.get(roomId).add(ws);
         ws.isHost = false;
         ws.roomId = roomId;
 
-        await updatePlayerCount(roomId, 1);
+        const updatedRoom = await addPlayer(roomId, ws.userId);
 
-        // Notify host
+        // Notify host of new join request
         const host = getHost(roomId);
         if (host) {
           send(host, { type: 'player-join-request', userId: ws.userId });
+        }
+
+        // Broadcast updated player list to everyone in the room
+        if (updatedRoom) {
+          broadcast(roomId, { type: 'room-updated', players: updatedRoom.players, playersCount: updatedRoom.playersCount });
         }
 
         send(ws, { type: 'room-joined', roomId });
@@ -289,8 +280,11 @@ app.ws('/signal', {
         await cleanupRoom(roomId);
         console.info('[Signal] Host disconnected – room cleaned up roomId=%s', roomId);
       } else {
-        // Non-host player left — update count in Redis
-        await updatePlayerCount(roomId, -1);
+        // Non-host player left — remove from array in Redis and notify remaining peers
+        const updatedRoom = await removePlayer(roomId, userId);
+        if (updatedRoom) {
+          broadcast(roomId, { type: 'room-updated', players: updatedRoom.players, playersCount: updatedRoom.playersCount });
+        }
         if (peers.size === 0) {
           rooms.delete(roomId);
         }
