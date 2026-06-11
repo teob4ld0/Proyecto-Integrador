@@ -95,7 +95,7 @@ async function userRoutes(fastify) {
 
     const session = await lucia.createSession(user.id, {});
 
-    return reply.send({ token: session.id });
+    return reply.send({ token: session.id, username: user.username, userId: user.id });
   });
 
   // POST /logout
@@ -112,6 +112,15 @@ async function userRoutes(fastify) {
   // GET /AllAuthorized — endpoint protegido de prueba
   fastify.get('/AllAuthorized', { preHandler: authenticate }, async (_request, reply) => {
     return reply.send('Autorizado.');
+  });
+
+  // GET /me — devuelve info del usuario autenticado
+  fastify.get('/me', { preHandler: authenticate }, async (request, reply) => {
+    return reply.send({
+      id: request.user.id,
+      username: request.user.username,
+      email: request.user.email,
+    });
   });
 
   // ---- FRIEND REQUEST ENDPOINTS ----

@@ -12,7 +12,7 @@ const MAX_PUBLIC_LIST = 50;
 const createRoomSchema = z.object({
   name: z.string().min(3).max(30).trim(),
   map: z.string().trim().default('classic'),
-  maxPlayers: z.number().int().min(2).max(20).default(8),
+  maxPlayers: z.number().int().min(2).max(4).default(4),
   password: z.string().max(64).optional(),
   isPublic: z.boolean().default(true),
 });
@@ -28,6 +28,7 @@ function sanitiseRoom(data) {
     id: data.id,
     name: data.name,
     hostId: data.hostId,
+    hostName: data.hostName || '',
     map: data.map,
     maxPlayers: data.maxPlayers,
     players: data.players,
@@ -64,6 +65,7 @@ async function roomRoutes(fastify) {
 
     const { name, map, maxPlayers, password, isPublic } = parsed.data;
     const hostId = request.user.id;
+    const hostName = request.user.username || '';
     const id = randomUUID();
     const hasPassword = Boolean(password);
     const createdAt = new Date().toISOString();
@@ -72,6 +74,7 @@ async function roomRoutes(fastify) {
       id,
       name,
       hostId,
+      hostName,
       map,
       maxPlayers,
       players: 1,
@@ -85,7 +88,6 @@ async function roomRoutes(fastify) {
     pipeline.set(roomCodeKey(roomCode(id)), id, 'EX', ROOM_TTL);
 
     if (hasPassword) {
-      // Store password separately so it never leaks through the room object
       pipeline.set(`room:${id}:pwd`, password, 'EX', ROOM_TTL);
     }
 
@@ -269,6 +271,61 @@ async function roomRoutes(fastify) {
     await pipeline.exec();
 
     return reply.send({ success: true });
+  });
+
+  // ── PATCH room settings ─────────────────────────────────────────────────────
+
+  const updateRoomSchema = z.object({
+    isPublic: z.boolean().optional(),
+  });
+
+  /**
+   * PATCH /api/rooms/:roomId
+   * Update room settings — only the host may do this (authenticated).
+   */
+  fastify.patch('/rooms/:roomId', { preHandler: authenticate }, async (request, reply) => {
+    const { roomId } = request.params;
+
+    if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
+      return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const parsed = updateRoomSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ message: 'Validation error', errors: parsed.error.flatten() });
+    }
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) {
+      return reply.status(404).send({ message: 'Room not found' });
+    }
+
+    let room;
+    try {
+      room = JSON.parse(raw);
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+
+    if (room.hostId !== request.user.id) {
+      return reply.status(403).send({ message: 'Only the host can update this room' });
+    }
+
+    const updates = parsed.data;
+
+    // Handle isPublic toggle
+    if (typeof updates.isPublic === 'boolean' && updates.isPublic !== room.isPublic) {
+      room.isPublic = updates.isPublic;
+      if (updates.isPublic && !room.hasPassword) {
+        await redis.zadd(PUBLIC_ROOMS_KEY, Date.now(), roomId);
+      } else {
+        await redis.zrem(PUBLIC_ROOMS_KEY, roomId);
+      }
+    }
+
+    await redis.set(roomKey(roomId), JSON.stringify(room), 'KEEPTTL');
+
+    return reply.send(room);
   });
 }
 

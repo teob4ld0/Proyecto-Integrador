@@ -87,7 +87,7 @@ export default function LobbyBrowser() {
                 onClick={() => setSelectedLobbyId(lobby.id)}
               >
                 <div className="lb-box lvl">{lobby.name}</div>
-                <div className="lb-box admin">{lobby.hostId ? lobby.hostId.substring(0, 8) : 'Host'}</div>
+                <div className="lb-box admin">{lobby.hostName || lobby.hostId?.substring(0, 8) || 'Host'}</div>
                 <div className="lb-box players">{lobby.players}/{lobby.maxPlayers}</div>
               </div>
             ))}

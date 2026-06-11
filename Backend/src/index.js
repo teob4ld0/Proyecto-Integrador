@@ -24,6 +24,7 @@ async function start() {
       if (
         !origin ||
         allowedOrigins.includes(origin) ||
+        /^http:\/\/localhost(:\d+)?$/.test(origin) ||
         /\.ngrok(-free)?\.(app|dev|io)$/.test(origin)
       ) {
         cb(null, true);

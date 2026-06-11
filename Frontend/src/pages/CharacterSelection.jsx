@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, getRoom, joinRoom } from '../services/api';
+import { createRoom, getRoom, joinRoom, updateRoom, getCurrentUser } from '../services/api';
 
 function getWsSignalUrl() {
   const wsEnv = (import.meta.env.VITE_WS_URL || '').trim();
@@ -39,6 +39,10 @@ export default function CharacterSelection() {
   const [copied, setCopied] = useState(false);
   const [room, setRoom] = useState(null);
   const [roomError, setRoomError] = useState('');
+  const [friendsOnly, setFriendsOnly] = useState(false);
+  const [playerName, setPlayerName] = useState(
+    localStorage.getItem('danma_username') || 'PLAYER'
+  );
 
   const players = room?.players || 1;
   const maxPlayers = room?.maxPlayers || 4;
@@ -47,6 +51,20 @@ export default function CharacterSelection() {
     () => Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => i < occupiedSlots),
     [maxPlayers, occupiedSlots],
   );
+
+  // Fetch username if not in localStorage
+  useEffect(() => {
+    if (!localStorage.getItem('danma_username') && token) {
+      getCurrentUser()
+        .then((user) => {
+          if (user.username) {
+            localStorage.setItem('danma_username', user.username);
+            setPlayerName(user.username);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -84,8 +102,8 @@ export default function CharacterSelection() {
             roomData = await createRoom({
               name: 'NO MERCY LOBBY',
               map: 'classic',
-              maxPlayers: 4,
-              isPublic: true,
+              maxPlayers: 5,
+              isPublic: !friendsOnly,
             });
             roomId = roomData.id;
           }
@@ -101,6 +119,7 @@ export default function CharacterSelection() {
         if (cancelled) return;
         setRoom(roomData);
         setLobbyCode(roomData.id.slice(0, 6).toUpperCase());
+        setFriendsOnly(!roomData.isPublic);
 
         const wsUrl = `${getWsSignalUrl()}?token=${encodeURIComponent(token)}`;
         activeWs = new WebSocket(wsUrl);
@@ -175,9 +194,22 @@ export default function CharacterSelection() {
     try {
       await navigator.clipboard.writeText(lobbyCode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset text after 2s
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy code: ', err);
+    }
+  };
+
+  const handleToggleFriendsOnly = async () => {
+    if (!room || !initialIsHost) return;
+    const newValue = !friendsOnly;
+    setFriendsOnly(newValue);
+    try {
+      const updated = await updateRoom(room.id, { isPublic: !newValue });
+      setRoom(updated);
+    } catch (err) {
+      console.error('Failed to update room:', err);
+      setFriendsOnly(!newValue); // revert on error
     }
   };
 
@@ -225,9 +257,9 @@ export default function CharacterSelection() {
       {/* MAIN GRID */}
       <div className="cs-main-grid">
         
-        {/* SLOT 1 (Occupied) */}
+        {/* SLOT 1 (Host - always leftmost) */}
         <div className="cs-slot">
-          <div className="cs-slot-header">PLY NAME</div>
+          <div className="cs-slot-header">{playerName}</div>
           <div className="cs-slot-body">
             <div className="cs-select-arrow up" onClick={changeSlot1Char}></div>
             <div className="cs-character-display">
@@ -242,7 +274,7 @@ export default function CharacterSelection() {
           </div>
         </div>
 
-        {/* OTHER SLOTS */}
+        {/* OTHER SLOTS (joiners fill left to right) */}
         {joinerSlots.map((isOccupied, index) => (
           <div className="cs-slot" key={index}>
             <div className="cs-slot-header">
@@ -291,8 +323,13 @@ export default function CharacterSelection() {
         </div>
 
         <div className="cs-settings-row">
-          <button className="cs-settings-btn">ROOM ID</button>
-          <button className="cs-settings-btn" style={{ cursor: 'default' }}>{room?.id || '...'}</button>
+          <button className="cs-settings-btn">FRIENDS ONLY</button>
+          <button 
+            className={`cs-settings-btn ${friendsOnly ? 'active' : ''}`} 
+            onClick={handleToggleFriendsOnly}
+          >
+            {friendsOnly ? '✓ ON' : '✗ OFF'}
+          </button>
         </div>
 
         <div className="cs-settings-row">
