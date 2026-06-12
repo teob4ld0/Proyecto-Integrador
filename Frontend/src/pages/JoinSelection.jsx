@@ -26,7 +26,14 @@ export default function JoinSelection() {
 
     try {
       const room = await joinRoomByCode(normalized);
-      navigate('/character-selection', { state: { roomId: room.id, isHost: false } });
+      navigate('/character-selection', {
+        state: {
+          roomId: room.id,
+          roomCode: normalized,
+          isHost: false,
+          alreadyJoined: true,
+        },
+      });
     } catch (err) {
       setError(err.message || 'No se pudo unir a la sala.');
     } finally {
