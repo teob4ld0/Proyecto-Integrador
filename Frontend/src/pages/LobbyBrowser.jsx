@@ -3,6 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import { getPublicRooms, joinRoom } from '../services/api';
 import '../styles/lobby-browser.css';
 
+function resolvePlayersCount(lobby) {
+  const count = lobby?.player?.count;
+  if (typeof count === 'number' && Number.isFinite(count)) return count;
+
+  if (typeof lobby?.playersCount === 'number' && Number.isFinite(lobby.playersCount)) {
+    return lobby.playersCount;
+  }
+
+  if (Array.isArray(lobby?.players)) return lobby.players.length;
+
+  if (typeof lobby?.players === 'number' && Number.isFinite(lobby.players)) {
+    return lobby.players;
+  }
+
+  return 1;
+}
+
 export default function LobbyBrowser() {
   const navigate = useNavigate();
   const [lobbies, setLobbies] = useState([]);
@@ -43,7 +60,7 @@ export default function LobbyBrowser() {
       try {
         const result = await joinRoom(selectedLobbyId);
         console.log('Joined lobby successfully:', result);
-        navigate('/character-selection', { state: { roomId: selectedLobbyId, isHost: false } });
+        navigate('/character-selection', { state: { roomId: selectedLobbyId, isHost: false, alreadyJoined: true } });
       } catch (err) {
         console.error('Error joining lobby:', err);
         alert('Could not join room: ' + err.message);
@@ -88,7 +105,7 @@ export default function LobbyBrowser() {
               >
                 <div className="lb-box lvl">{lobby.name}</div>
                 <div className="lb-box admin">{lobby.hostName || lobby.hostId?.substring(0, 8) || 'Host'}</div>
-                <div className="lb-box players">{lobby.players}/{lobby.maxPlayers}</div>
+                <div className="lb-box players">{resolvePlayersCount(lobby)}/{lobby.maxPlayers}</div>
               </div>
             ))}
           </div>

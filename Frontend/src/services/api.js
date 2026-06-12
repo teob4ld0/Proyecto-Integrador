@@ -68,6 +68,13 @@ export async function getCurrentUser() {
   return handleResponse(res);
 }
 
+export async function getUsersList() {
+  const res = await fetch(`${API_BASE}/auth`, {
+    headers: { 'ngrok-skip-browser-warning': 'true' },
+  });
+  return handleResponse(res);
+}
+
 export async function verifyEmail({ userId, token, email }) {
   const res = await fetch(
     `${API_BASE}/auth/verify-email?userId=${userId}&token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`,

@@ -1,7 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, getRoom, joinRoom, updateRoom, getCurrentUser } from '../services/api';
+import { createRoom, getRoom, getRoomByCode, getUsersList, joinRoom, updateRoom, getCurrentUser } from '../services/api';
+
+function resolveRoomCode(roomData, fallbackCode = '') {
+  return String(roomData?.code || roomData?.roomCode || fallbackCode || roomData?.id?.slice(0, 6) || '')
+    .trim()
+    .toUpperCase();
+}
+
+function resolvePlayersCount(roomData) {
+  const count = roomData?.player?.count;
+  if (typeof count === 'number' && Number.isFinite(count)) return count;
+
+  if (typeof roomData?.playersCount === 'number' && Number.isFinite(roomData.playersCount)) {
+    return roomData.playersCount;
+  }
+
+  if (Array.isArray(roomData?.players)) return roomData.players.length;
+
+  if (typeof roomData?.players === 'number' && Number.isFinite(roomData.players)) {
+    return roomData.players;
+  }
+
+  return 1;
+}
 
 function getWsSignalUrl() {
   const wsEnv = (import.meta.env.VITE_WS_URL || '').trim();
@@ -43,14 +66,30 @@ export default function CharacterSelection() {
   const [playerName, setPlayerName] = useState(
     localStorage.getItem('danma_username') || 'PLAYER'
   );
+  const [currentUserId, setCurrentUserId] = useState(
+    localStorage.getItem('danma_userId') || ''
+  );
+  const [usernamesById, setUsernamesById] = useState({});
 
-  const players = room?.players || 1;
+  const players = resolvePlayersCount(room);
   const maxPlayers = room?.maxPlayers || 4;
   const occupiedSlots = Math.max(0, players - 1);
-  const joinerSlots = useMemo(
-    () => Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => i < occupiedSlots),
-    [maxPlayers, occupiedSlots],
+  const roomPlayers = Array.isArray(room?.players) ? room.players : [];
+  const hostId = room?.hostId || roomPlayers[0] || null;
+  const joinerIds = useMemo(
+    () => roomPlayers.filter((id) => id !== hostId),
+    [hostId, roomPlayers],
   );
+  const joinerSlots = useMemo(
+    () => Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => joinerIds[i] || null),
+    [joinerIds, maxPlayers],
+  );
+
+  const resolveDisplayName = (userId, fallback = 'PLAYER') => {
+    if (!userId) return fallback;
+    if (userId === currentUserId) return playerName;
+    return usernamesById[userId] || `PLAYER ${userId.slice(0, 5).toUpperCase()}`;
+  };
 
   // Fetch username if not in localStorage
   useEffect(() => {
@@ -61,10 +100,36 @@ export default function CharacterSelection() {
             localStorage.setItem('danma_username', user.username);
             setPlayerName(user.username);
           }
+          if (user.id || user.userId) {
+            const userId = user.id || user.userId;
+            localStorage.setItem('danma_userId', userId);
+            setCurrentUserId(userId);
+          }
         })
         .catch(() => {});
     }
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getUsersList()
+      .then((users) => {
+        if (cancelled || !Array.isArray(users)) return;
+        const map = {};
+        for (const user of users) {
+          if (user?.id && user?.username) {
+            map[user.id] = user.username;
+          }
+        }
+        setUsernamesById(map);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -94,6 +159,8 @@ export default function CharacterSelection() {
         const isHost = flowState.isHost !== false;
         let roomData;
         let roomId = flowState.roomId || '';
+        const roomCode = String(flowState.roomCode || '').trim().toUpperCase();
+        const alreadyJoined = flowState.alreadyJoined === true;
 
         if (isHost) {
           if (roomId) {
@@ -108,17 +175,24 @@ export default function CharacterSelection() {
             roomId = roomData.id;
           }
         } else {
+          if (!roomId && roomCode) {
+            const roomByCode = await getRoomByCode(roomCode);
+            roomId = roomByCode.id;
+          }
+
           if (!roomId) {
             throw new Error('Missing room id');
           }
 
-          await joinRoom(roomId);
+          if (!alreadyJoined) {
+            await joinRoom(roomId);
+          }
           roomData = await getRoom(roomId);
         }
 
         if (cancelled) return;
         setRoom(roomData);
-        setLobbyCode(roomData.id.slice(0, 6).toUpperCase());
+        setLobbyCode(resolveRoomCode(roomData, roomCode));
         setFriendsOnly(!roomData.isPublic);
 
         const wsUrl = `${getWsSignalUrl()}?token=${encodeURIComponent(token)}`;
@@ -132,6 +206,28 @@ export default function CharacterSelection() {
         activeWs.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
+            if (message.type === 'room-updated') {
+              setRoom((prev) => {
+                const updatedPlayers = Array.isArray(message.players)
+                  ? message.players
+                  : Array.isArray(prev?.players)
+                    ? prev.players
+                    : [];
+                const updatedCount = typeof message.playersCount === 'number'
+                  ? message.playersCount
+                  : resolvePlayersCount({ players: updatedPlayers });
+
+                return {
+                  ...(prev || {}),
+                  players: updatedPlayers,
+                  playersCount: updatedCount,
+                  player: {
+                    ...(prev?.player || {}),
+                    count: updatedCount,
+                  },
+                };
+              });
+            }
             if (message.type === 'player-join-request' || message.type === 'room-joined') {
               getRoom(roomData.id).then((latest) => {
                 if (!cancelled) setRoom(latest);
@@ -180,7 +276,7 @@ export default function CharacterSelection() {
         activeWs.close();
       }
     };
-  }, [flowState.isHost, flowState.roomId, navigate, token]);
+  }, [flowState.alreadyJoined, flowState.isHost, flowState.roomCode, flowState.roomId, navigate, token]);
 
   const changeSlot1Char = () => {
     setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
@@ -259,7 +355,11 @@ export default function CharacterSelection() {
         
         {/* SLOT 1 (Host - always leftmost) */}
         <div className="cs-slot">
-          <div className="cs-slot-header">{playerName}</div>
+          <div className="cs-slot-header">
+            {hostId
+              ? `${resolveDisplayName(hostId, 'HOST')} (HOST)`
+              : 'HOST'}
+          </div>
           <div className="cs-slot-body">
             <div className="cs-select-arrow up" onClick={changeSlot1Char}></div>
             <div className="cs-character-display">
@@ -275,13 +375,17 @@ export default function CharacterSelection() {
         </div>
 
         {/* OTHER SLOTS (joiners fill left to right) */}
-        {joinerSlots.map((isOccupied, index) => (
+        {joinerSlots.map((joinerId, index) => (
           <div className="cs-slot" key={index}>
             <div className="cs-slot-header">
-              {isOccupied ? 'PLAYER READY' : 'WAITING...'}
+              {joinerId
+                ? (joinerId === currentUserId
+                  ? `${resolveDisplayName(joinerId)} (YOU)`
+                  : resolveDisplayName(joinerId, `PLAYER ${index + 2}`))
+                : 'WAITING...'}
             </div>
             
-            {!isOccupied && (
+            {!joinerId && (
               <div className="cs-slot-body empty">
                 <button className="cs-invite-btn" disabled style={{ opacity: 0.6, cursor: 'default' }}>
                   OPEN SLOT
@@ -289,7 +393,7 @@ export default function CharacterSelection() {
               </div>
             )}
 
-            {isOccupied && (
+            {joinerId && (
               <div className="cs-slot-body">
                 <div className="cs-select-arrow up" style={{ opacity: 0.5, cursor: 'not-allowed' }}></div>
                 <div className="cs-character-display">
@@ -319,7 +423,7 @@ export default function CharacterSelection() {
 
         <div className="cs-settings-row">
           <button className="cs-settings-btn">PLAYERS</button>
-          <button className="cs-settings-btn">{players}/{maxPlayers}</button>
+          <button className="cs-settings-btn">{Math.max(players, occupiedSlots + 1)}/{maxPlayers}</button>
         </div>
 
         <div className="cs-settings-row">
