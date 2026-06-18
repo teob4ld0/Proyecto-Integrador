@@ -27,6 +27,14 @@ const createRoomSchema = z.object({
  */
 function sanitiseRoom(data) {
   const players = Array.isArray(data.players) ? data.players : [];
+  const rawCharacters = data.playerCharacters && typeof data.playerCharacters === 'object'
+    ? data.playerCharacters
+    : {};
+  const playerCharacters = {};
+  for (const playerId of players) {
+    playerCharacters[playerId] = rawCharacters[playerId] || 'blue';
+  }
+
   return {
     id: data.id,
     name: data.name,
@@ -39,6 +47,7 @@ function sanitiseRoom(data) {
     isPublic: data.isPublic,
     createdAt: data.createdAt,
     difficulty: data.difficulty,
+    playerCharacters,
   };
 }
 
@@ -72,6 +81,7 @@ async function roomRoutes(fastify) {
       map,
       maxPlayers,
       players: [hostId],
+      playerCharacters: { [hostId]: 'blue' },
       hasPassword,
       isPublic,
       createdAt,

@@ -4,6 +4,26 @@ const redis = require('../config/redis');
 
 const PLAYER_ROOM_KEY = (userId) => `player:${userId}:room`;
 
+function syncPlayerCharacters(room) {
+  if (!room.playerCharacters || typeof room.playerCharacters !== 'object') {
+    room.playerCharacters = {};
+  }
+
+  const validPlayers = new Set(Array.isArray(room.players) ? room.players : []);
+
+  for (const playerId of validPlayers) {
+    if (!room.playerCharacters[playerId]) {
+      room.playerCharacters[playerId] = 'blue';
+    }
+  }
+
+  for (const playerId of Object.keys(room.playerCharacters)) {
+    if (!validPlayers.has(playerId)) {
+      delete room.playerCharacters[playerId];
+    }
+  }
+}
+
 /**
  * Add a userId to the room's players array in Redis.
  * Idempotent — won't add duplicates.
@@ -23,6 +43,7 @@ async function addPlayer(roomId, userId) {
     const room = JSON.parse(raw);
     if (!Array.isArray(room.players)) room.players = [];
     if (!room.players.includes(userId)) room.players.push(userId);
+    syncPlayerCharacters(room);
     room.playersCount = room.players.length;
 
     const pipeline = redis.pipeline();
@@ -53,6 +74,7 @@ async function removePlayer(roomId, userId) {
     const room = JSON.parse(raw);
     if (!Array.isArray(room.players)) return null;
     room.players = room.players.filter((id) => id !== userId);
+    syncPlayerCharacters(room);
     room.playersCount = room.players.length;
 
     const pipeline = redis.pipeline();
