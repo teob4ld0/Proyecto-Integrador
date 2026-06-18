@@ -13,7 +13,7 @@ const MAX_PUBLIC_LIST = 50;
 const createRoomSchema = z.object({
   name: z.string().min(3).max(30).trim(),
   map: z.string().trim().default('classic'),
-  maxPlayers: z.number().int().min(2).max(20).default(8),
+  maxPlayers: z.number().int().min(1).max(4).default(4),
   password: z.string().max(64).optional(),
   isPublic: z.boolean().default(true),
   difficulty: z.enum(['normal', 'difficult', 'no_mercy']).default('normal'),

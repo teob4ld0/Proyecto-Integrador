@@ -72,7 +72,7 @@ export default function CharacterSelection() {
   const [usernamesById, setUsernamesById] = useState({});
 
   const players = resolvePlayersCount(room);
-  const maxPlayers = room?.maxPlayers || 4;
+  const maxPlayers = 4;
   const occupiedSlots = Math.max(0, players - 1);
   const roomPlayers = Array.isArray(room?.players) ? room.players : [];
   const hostId = room?.hostId || roomPlayers[0] || null;
