@@ -142,12 +142,27 @@ export async function updateRoom(roomId, settings) {
   return handleResponse(res);
 }
 
+export function roomCodeFromRoomId(roomId) {
+  return String(roomId || '')
+    .replace(/-/g, '')
+    .slice(0, 6)
+    .toUpperCase();
+}
+
 export async function getRoomByCode(code) {
   const normalizedCode = String(code || '').trim().toUpperCase();
-  const res = await fetch(`${API_BASE}/rooms/by-code/${encodeURIComponent(normalizedCode)}`, {
-    headers: { 'ngrok-skip-browser-warning': 'true' },
-  });
-  return handleResponse(res);
+  if (!normalizedCode || normalizedCode.length !== 6) {
+    throw new Error('Invalid room code');
+  }
+
+  const rooms = await getPublicRooms();
+  const room = rooms.find((candidate) => roomCodeFromRoomId(candidate.id) === normalizedCode);
+
+  if (!room) {
+    throw new Error('Room not found by code');
+  }
+
+  return room;
 }
 
 export async function joinRoom(roomId, password = '') {
