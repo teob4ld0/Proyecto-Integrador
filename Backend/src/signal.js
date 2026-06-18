@@ -28,6 +28,7 @@ const { addPlayer, removePlayer, getPlayerRoom } = require('./utils/roomUtils');
 
 const WS_PORT = parseInt(process.env.WS_PORT || '9001', 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const ALLOWED_CHARACTER_COLORS = new Set(['blue', 'red']);
 
 // roomId → Set<WebSocket>
 const rooms = new Map();
@@ -229,7 +230,14 @@ app.ws('/signal', {
         if (ws.roomId) {
           rooms.get(ws.roomId)?.delete(ws);
           const prevRoom = await removePlayer(ws.roomId, ws.userId);
-          if (prevRoom) broadcast(ws.roomId, { type: 'room-updated', players: prevRoom.players, playersCount: prevRoom.playersCount });
+          if (prevRoom) {
+            broadcast(ws.roomId, {
+              type: 'room-updated',
+              players: prevRoom.players,
+              playersCount: prevRoom.playersCount,
+              playerCharacters: prevRoom.playerCharacters || {},
+            });
+          }
         }
 
         rooms.get(roomId).add(ws);
@@ -246,11 +254,60 @@ app.ws('/signal', {
 
         // Broadcast updated player list to everyone in the room
         if (updatedRoom) {
-          broadcast(roomId, { type: 'room-updated', players: updatedRoom.players, playersCount: updatedRoom.playersCount });
+          broadcast(roomId, {
+            type: 'room-updated',
+            players: updatedRoom.players,
+            playersCount: updatedRoom.playersCount,
+            playerCharacters: updatedRoom.playerCharacters || {},
+          });
         }
 
-        send(ws, { type: 'room-joined', roomId });
+        send(ws, {
+          type: 'room-joined',
+          roomId,
+          playerCharacters: updatedRoom?.playerCharacters || joinTarget.playerCharacters || {},
+        });
         console.info('[Signal] Player joined roomId=%s userId=%s', roomId, ws.userId);
+        break;
+      }
+
+      case 'set-character-color': {
+        const { color } = msg;
+        if (!roomId) return sendError(ws, 'roomId required');
+        if (!ALLOWED_CHARACTER_COLORS.has(color)) {
+          return sendError(ws, 'Invalid character color');
+        }
+        if (ws.roomId !== roomId) {
+          return sendError(ws, 'Socket is not in this room');
+        }
+
+        const rawRoom = await redis.get(`room:${roomId}`);
+        if (!rawRoom) return sendError(ws, 'Room not found');
+
+        let room;
+        try {
+          room = JSON.parse(rawRoom);
+        } catch {
+          return sendError(ws, 'Corrupted room data');
+        }
+
+        if (!Array.isArray(room.players) || !room.players.includes(ws.userId)) {
+          return sendError(ws, 'Player is not part of this room');
+        }
+
+        if (!room.playerCharacters || typeof room.playerCharacters !== 'object') {
+          room.playerCharacters = {};
+        }
+
+        room.playerCharacters[ws.userId] = color;
+        await redis.set(`room:${roomId}`, JSON.stringify(room), 'KEEPTTL');
+
+        broadcast(roomId, {
+          type: 'room-character-updated',
+          userId: ws.userId,
+          color,
+          playerCharacters: room.playerCharacters,
+        });
         break;
       }
 
@@ -283,7 +340,12 @@ app.ws('/signal', {
         // Non-host player left — remove from array in Redis and notify remaining peers
         const updatedRoom = await removePlayer(roomId, userId);
         if (updatedRoom) {
-          broadcast(roomId, { type: 'room-updated', players: updatedRoom.players, playersCount: updatedRoom.playersCount });
+          broadcast(roomId, {
+            type: 'room-updated',
+            players: updatedRoom.players,
+            playersCount: updatedRoom.playersCount,
+            playerCharacters: updatedRoom.playerCharacters || {},
+          });
         }
         if (peers.size === 0) {
           rooms.delete(roomId);

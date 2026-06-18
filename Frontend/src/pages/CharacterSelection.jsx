@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
 import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser } from '../services/api';
@@ -56,7 +56,6 @@ export default function CharacterSelection() {
   const flowState = location.state || {};
   const initialIsHost = flowState.isHost !== false;
   
-  const [slot1Char, setSlot1Char] = useState('blue'); 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lobbyCode, setLobbyCode] = useState('');
   const [copied, setCopied] = useState(false);
@@ -71,6 +70,8 @@ export default function CharacterSelection() {
   );
   const [usernamesById, setUsernamesById] = useState({});
   const [activeRoomId, setActiveRoomId] = useState('');
+  const leaveTriggeredRef = useRef(false);
+  const wsRef = useRef(null);
 
   const players = resolvePlayersCount(room);
   const maxPlayers = 4;
@@ -90,6 +91,67 @@ export default function CharacterSelection() {
     if (!userId) return fallback;
     if (userId === currentUserId) return playerName;
     return usernamesById[userId] || `PLAYER ${userId.slice(0, 5).toUpperCase()}`;
+  };
+
+  const getPlayerColor = (userId) => {
+    if (!userId) return 'blue';
+    const roomCharacters = room?.playerCharacters;
+    if (roomCharacters && typeof roomCharacters === 'object') {
+      return roomCharacters[userId] || 'blue';
+    }
+    return 'blue';
+  };
+
+  const setPlayerColorInRoom = (userId, color) => {
+    if (!userId) return;
+    setRoom((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        playerCharacters: {
+          ...(prev.playerCharacters || {}),
+          [userId]: color,
+        },
+      };
+    });
+  };
+
+  const handleToggleCharacterForPlayer = (userId) => {
+    if (!userId || userId !== currentUserId || !activeRoomId) return;
+    const currentColor = getPlayerColor(userId);
+    const nextColor = currentColor === 'blue' ? 'red' : 'blue';
+
+    setPlayerColorInRoom(userId, nextColor);
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'set-character-color',
+        roomId: activeRoomId,
+        color: nextColor,
+      }));
+    }
+  };
+
+  const leaveCurrentRoom = async (keepalive = false) => {
+    if (!activeRoomId || !token || leaveTriggeredRef.current) return;
+    leaveTriggeredRef.current = true;
+
+    const isCurrentUserHost = room?.hostId
+      ? room.hostId === currentUserId
+      : flowState.isHost !== false;
+
+    try {
+      if (isCurrentUserHost) {
+        await deleteRoom(activeRoomId, { keepalive });
+      } else {
+        await leaveRoom(activeRoomId, { keepalive });
+      }
+    } catch {
+      // Fallback: if role detection was stale, try the join-leave endpoint as non-host.
+      if (isCurrentUserHost) {
+        leaveRoom(activeRoomId, { keepalive }).catch(() => {});
+      }
+    }
   };
 
   // Fetch username if not in localStorage
@@ -136,13 +198,13 @@ export default function CharacterSelection() {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
+        handleToggleCharacterForPlayer(currentUserId);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [activeRoomId, currentUserId, room]);
 
   useEffect(() => {
     let activeWs;
@@ -194,11 +256,13 @@ export default function CharacterSelection() {
         if (cancelled) return;
         setRoom(roomData);
         setActiveRoomId(roomData.id);
+        leaveTriggeredRef.current = false;
         setLobbyCode(resolveRoomCode(roomData, roomCode));
         setFriendsOnly(!roomData.isPublic);
 
         const wsUrl = `${getWsSignalUrl()}?token=${encodeURIComponent(token)}`;
         activeWs = new WebSocket(wsUrl);
+        wsRef.current = activeWs;
 
         activeWs.onopen = () => {
           const type = isHost ? 'host-room' : 'join-room';
@@ -218,15 +282,36 @@ export default function CharacterSelection() {
                 const updatedCount = typeof message.playersCount === 'number'
                   ? message.playersCount
                   : resolvePlayersCount({ players: updatedPlayers });
+                const updatedCharacters = message.playerCharacters && typeof message.playerCharacters === 'object'
+                  ? message.playerCharacters
+                  : (prev?.playerCharacters || {});
 
                 return {
                   ...(prev || {}),
                   players: updatedPlayers,
                   playersCount: updatedCount,
+                  playerCharacters: updatedCharacters,
                   player: {
                     ...(prev?.player || {}),
                     count: updatedCount,
                   },
+                };
+              });
+            }
+            if (message.type === 'room-character-updated') {
+              setRoom((prev) => {
+                if (!prev) return prev;
+
+                const updatedCharacters = message.playerCharacters && typeof message.playerCharacters === 'object'
+                  ? message.playerCharacters
+                  : {
+                    ...(prev.playerCharacters || {}),
+                    [message.userId]: message.color,
+                  };
+
+                return {
+                  ...prev,
+                  playerCharacters: updatedCharacters,
                 };
               });
             }
@@ -277,24 +362,15 @@ export default function CharacterSelection() {
       if (activeWs && activeWs.readyState === WebSocket.OPEN) {
         activeWs.close();
       }
+      wsRef.current = null;
     };
   }, [flowState.alreadyJoined, flowState.isHost, flowState.roomCode, flowState.roomId, navigate, token]);
 
   useEffect(() => {
     if (!activeRoomId || !token) return;
 
-    const isHost = flowState.isHost !== false;
-
-    const removeFromRoom = (keepalive = false) => {
-      if (isHost) {
-        deleteRoom(activeRoomId, { keepalive }).catch(() => {});
-      } else {
-        leaveRoom(activeRoomId, { keepalive }).catch(() => {});
-      }
-    };
-
     const handlePageExit = () => {
-      removeFromRoom(true);
+      leaveCurrentRoom(true);
     };
 
     window.addEventListener('pagehide', handlePageExit);
@@ -303,12 +379,13 @@ export default function CharacterSelection() {
     return () => {
       window.removeEventListener('pagehide', handlePageExit);
       window.removeEventListener('beforeunload', handlePageExit);
-      removeFromRoom(false);
+      leaveCurrentRoom(false);
     };
-  }, [activeRoomId, flowState.isHost, token]);
+  }, [activeRoomId, currentUserId, flowState.isHost, room?.hostId, token]);
 
-  const changeSlot1Char = () => {
-    setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
+  const handleBack = async () => {
+    await leaveCurrentRoom(false);
+    navigate('/join');
   };
 
   const toggleSettings = () => {
@@ -344,7 +421,7 @@ export default function CharacterSelection() {
 
       {/* TOP HEADER */}
       <header className="cs-header">
-        <button className="cs-back-btn" onClick={() => navigate('/join')}>
+        <button className="cs-back-btn" onClick={handleBack}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
              <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
@@ -390,11 +467,19 @@ export default function CharacterSelection() {
               : 'HOST'}
           </div>
           <div className="cs-slot-body">
-            <div className="cs-select-arrow up" onClick={changeSlot1Char}></div>
+            <div
+              className="cs-select-arrow up"
+              onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId) : undefined}
+              style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+            ></div>
             <div className="cs-character-display">
-              <div className={`cs-character-box ${slot1Char}`}></div>
+              <div className={`cs-character-box ${getPlayerColor(hostId)}`}></div>
             </div>
-            <div className="cs-select-arrow down" onClick={changeSlot1Char}></div>
+            <div
+              className="cs-select-arrow down"
+              onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId) : undefined}
+              style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+            ></div>
           </div>
           <div className="cs-slot-footer">
             <div className="cs-equip-box"></div>
@@ -424,11 +509,19 @@ export default function CharacterSelection() {
 
             {joinerId && (
               <div className="cs-slot-body">
-                <div className="cs-select-arrow up" style={{ opacity: 0.5, cursor: 'not-allowed' }}></div>
+                <div
+                  className="cs-select-arrow up"
+                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId) : undefined}
+                  style={joinerId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                ></div>
                 <div className="cs-character-display">
-                  <div className="cs-character-box blue"></div>
+                  <div className={`cs-character-box ${getPlayerColor(joinerId)}`}></div>
                 </div>
-                <div className="cs-select-arrow down" style={{ opacity: 0.5, cursor: 'not-allowed' }}></div>
+                <div
+                  className="cs-select-arrow down"
+                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId) : undefined}
+                  style={joinerId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                ></div>
               </div>
             )}
 
