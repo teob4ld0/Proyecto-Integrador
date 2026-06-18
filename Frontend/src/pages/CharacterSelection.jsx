@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, getRoom, getRoomByCode, getUsersList, joinRoom, updateRoom, getCurrentUser } from '../services/api';
+import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser } from '../services/api';
 
 function resolveRoomCode(roomData, fallbackCode = '') {
-  return String(roomData?.code || roomData?.roomCode || fallbackCode || roomData?.id?.slice(0, 6) || '')
-    .trim()
-    .toUpperCase();
+  const normalizedFallback = String(fallbackCode || '').trim().toUpperCase();
+  if (normalizedFallback) return normalizedFallback;
+  return roomCodeFromRoomId(roomData?.id);
 }
 
 function resolvePlayersCount(roomData) {
@@ -70,6 +70,7 @@ export default function CharacterSelection() {
     localStorage.getItem('danma_userId') || ''
   );
   const [usernamesById, setUsernamesById] = useState({});
+  const [activeRoomId, setActiveRoomId] = useState('');
 
   const players = resolvePlayersCount(room);
   const maxPlayers = 4;
@@ -169,7 +170,7 @@ export default function CharacterSelection() {
             roomData = await createRoom({
               name: 'NO MERCY LOBBY',
               map: 'classic',
-              maxPlayers: 5,
+              maxPlayers: 4,
               isPublic: !friendsOnly,
             });
             roomId = roomData.id;
@@ -192,6 +193,7 @@ export default function CharacterSelection() {
 
         if (cancelled) return;
         setRoom(roomData);
+        setActiveRoomId(roomData.id);
         setLobbyCode(resolveRoomCode(roomData, roomCode));
         setFriendsOnly(!roomData.isPublic);
 
@@ -277,6 +279,33 @@ export default function CharacterSelection() {
       }
     };
   }, [flowState.alreadyJoined, flowState.isHost, flowState.roomCode, flowState.roomId, navigate, token]);
+
+  useEffect(() => {
+    if (!activeRoomId || !token) return;
+
+    const isHost = flowState.isHost !== false;
+
+    const removeFromRoom = (keepalive = false) => {
+      if (isHost) {
+        deleteRoom(activeRoomId, { keepalive }).catch(() => {});
+      } else {
+        leaveRoom(activeRoomId, { keepalive }).catch(() => {});
+      }
+    };
+
+    const handlePageExit = () => {
+      removeFromRoom(true);
+    };
+
+    window.addEventListener('pagehide', handlePageExit);
+    window.addEventListener('beforeunload', handlePageExit);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageExit);
+      window.removeEventListener('beforeunload', handlePageExit);
+      removeFromRoom(false);
+    };
+  }, [activeRoomId, flowState.isHost, token]);
 
   const changeSlot1Char = () => {
     setSlot1Char(prev => prev === 'blue' ? 'red' : 'blue');
