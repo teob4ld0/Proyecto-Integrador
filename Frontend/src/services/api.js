@@ -174,6 +174,24 @@ export async function joinRoom(roomId, password = '') {
   return handleResponse(res);
 }
 
+export async function leaveRoom(roomId, { keepalive = false } = {}) {
+  const res = await fetch(`${API_BASE}/rooms/${roomId}/join`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+    keepalive,
+  });
+  return handleResponse(res);
+}
+
+export async function deleteRoom(roomId, { keepalive = false } = {}) {
+  const res = await fetch(`${API_BASE}/rooms/${roomId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+    keepalive,
+  });
+  return handleResponse(res);
+}
+
 export async function joinRoomByCode(code, password = '') {
   const room = await getRoomByCode(code);
   await joinRoom(room.id, password);
