@@ -26,6 +26,21 @@ function resolvePlayersCount(roomData) {
   return 1;
 }
 
+function normalizePlayerCharacters(roomData, fallbackCharacters = {}) {
+  const players = Array.isArray(roomData?.players) ? roomData.players : [];
+  const incomingCharacters = roomData?.playerCharacters && typeof roomData.playerCharacters === 'object'
+    ? roomData.playerCharacters
+    : {};
+  const mergedCharacters = { ...(fallbackCharacters || {}), ...incomingCharacters };
+  const normalizedCharacters = {};
+
+  for (const playerId of players) {
+    normalizedCharacters[playerId] = mergedCharacters[playerId] || 'blue';
+  }
+
+  return normalizedCharacters;
+}
+
 function getWsSignalUrl() {
   const wsEnv = (import.meta.env.VITE_WS_URL || '').trim();
   if (wsEnv) {
@@ -254,7 +269,10 @@ export default function CharacterSelection() {
         }
 
         if (cancelled) return;
-        setRoom(roomData);
+        setRoom((prev) => ({
+          ...roomData,
+          playerCharacters: normalizePlayerCharacters(roomData, prev?.playerCharacters),
+        }));
         setActiveRoomId(roomData.id);
         leaveTriggeredRef.current = false;
         setLobbyCode(resolveRoomCode(roomData, roomCode));
@@ -317,7 +335,12 @@ export default function CharacterSelection() {
             }
             if (message.type === 'player-join-request' || message.type === 'room-joined') {
               getRoom(roomData.id).then((latest) => {
-                if (!cancelled) setRoom(latest);
+                if (!cancelled) {
+                  setRoom((prev) => ({
+                    ...latest,
+                    playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
+                  }));
+                }
               }).catch(() => {});
             }
             if (message.type === 'host-disconnected') {
@@ -339,7 +362,12 @@ export default function CharacterSelection() {
         refreshTimer = setInterval(() => {
           getRoom(roomData.id)
             .then((latest) => {
-              if (!cancelled) setRoom(latest);
+              if (!cancelled) {
+                setRoom((prev) => ({
+                  ...latest,
+                  playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
+                }));
+              }
             })
             .catch(() => {});
 
