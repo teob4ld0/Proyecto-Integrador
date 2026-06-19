@@ -55,6 +55,13 @@ function roomKey(roomId) {
   return `room:${roomId}`;
 }
 
+function roomCodeFromRoomId(roomId) {
+  return String(roomId || '')
+    .replace(/-/g, '')
+    .slice(0, 6)
+    .toUpperCase();
+}
+
 // ── Plugin ───────────────────────────────────────────────────────────────────
 
 async function roomRoutes(fastify) {
@@ -90,6 +97,7 @@ async function roomRoutes(fastify) {
 
     const pipeline = redis.pipeline();
     pipeline.set(roomKey(id), JSON.stringify(room), 'EX', ROOM_TTL);
+    pipeline.set(`room:code:${roomCodeFromRoomId(id)}`, id, 'EX', ROOM_TTL);
 
     if (hasPassword) {
       // Store password separately so it never leaks through the room object
@@ -146,6 +154,64 @@ async function roomRoutes(fastify) {
 
     if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
       return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) {
+      return reply.status(404).send({ message: 'Room not found' });
+    }
+
+    try {
+      return reply.send(JSON.parse(raw));
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+  });
+
+  /**
+   * GET /api/rooms/by-code/:code
+   * Resolve a room by its 6-char code (works for public and friends-only rooms).
+   */
+  fastify.get('/rooms/by-code/:code', async (request, reply) => {
+    const normalizedCode = String(request.params.code || '').trim().toUpperCase();
+
+    if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) {
+      return reply.status(400).send({ message: 'Invalid room code' });
+    }
+
+    let roomId = await redis.get(`room:code:${normalizedCode}`);
+
+    // Backward compatibility: discover rooms created before code indexing existed.
+    if (!roomId || !/^[0-9a-f-]{36}$/i.test(roomId)) {
+      let cursor = '0';
+      let discoveredId = '';
+
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'room:*', 'COUNT', 200);
+        cursor = nextCursor;
+
+        for (const key of keys) {
+          const candidateId = key.startsWith('room:') ? key.slice(5) : '';
+          if (!/^[0-9a-f-]{36}$/i.test(candidateId)) continue;
+          if (roomCodeFromRoomId(candidateId) === normalizedCode) {
+            discoveredId = candidateId;
+            break;
+          }
+        }
+      } while (cursor !== '0' && !discoveredId);
+
+      if (!discoveredId) {
+        return reply.status(404).send({ message: 'Room not found' });
+      }
+
+      roomId = discoveredId;
+
+      const ttl = await redis.ttl(roomKey(roomId));
+      if (ttl > 0) {
+        await redis.set(`room:code:${normalizedCode}`, roomId, 'EX', ttl);
+      } else {
+        await redis.set(`room:code:${normalizedCode}`, roomId, 'EX', ROOM_TTL);
+      }
     }
 
     const raw = await redis.get(roomKey(roomId));
@@ -276,6 +342,8 @@ async function roomRoutes(fastify) {
 
     const pipeline = redis.pipeline();
     pipeline.del(roomKey(roomId));
+    pipeline.del(`room:${roomId}:pwd`);
+    pipeline.del(`room:code:${roomCodeFromRoomId(roomId)}`);
     pipeline.zrem(PUBLIC_ROOMS_KEY, roomId);
     await pipeline.exec();
 

@@ -16,6 +16,13 @@ function authHeaders() {
   return headers;
 }
 
+function authHeadersNoBody() {
+  const token = localStorage.getItem('danma_token');
+  const headers = { 'ngrok-skip-browser-warning': 'true' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
 async function handleResponse(res) {
   const data = await res.text();
   if (!res.ok) {
@@ -155,14 +162,10 @@ export async function getRoomByCode(code) {
     throw new Error('Invalid room code');
   }
 
-  const rooms = await getPublicRooms();
-  const room = rooms.find((candidate) => roomCodeFromRoomId(candidate.id) === normalizedCode);
-
-  if (!room) {
-    throw new Error('Room not found by code');
-  }
-
-  return room;
+  const res = await fetch(`${API_BASE}/rooms/by-code/${encodeURIComponent(normalizedCode)}`, {
+    headers: { 'ngrok-skip-browser-warning': 'true' },
+  });
+  return handleResponse(res);
 }
 
 export async function joinRoom(roomId, password = '') {
@@ -177,7 +180,7 @@ export async function joinRoom(roomId, password = '') {
 export async function leaveRoom(roomId, { keepalive = false } = {}) {
   const res = await fetch(`${API_BASE}/rooms/${roomId}/join`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: authHeadersNoBody(),
     keepalive,
   });
   return handleResponse(res);
@@ -186,7 +189,7 @@ export async function leaveRoom(roomId, { keepalive = false } = {}) {
 export async function deleteRoom(roomId, { keepalive = false } = {}) {
   const res = await fetch(`${API_BASE}/rooms/${roomId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: authHeadersNoBody(),
     keepalive,
   });
   return handleResponse(res);
