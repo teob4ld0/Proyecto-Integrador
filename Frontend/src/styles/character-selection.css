@@ -54,6 +54,44 @@
   text-shadow: 2px 2px 0 #000;
   box-shadow: inset 0 -4px 0 rgba(0,0,0,0.2);
   border: 2px solid #222;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.cs-level-box.normal {
+  background-color: #ffb300;
+}
+
+.cs-level-box.difficult {
+  background-color: #ff3b30;
+}
+
+.cs-level-box.nomercy {
+  background-color: #a200ff;
+}
+
+.cs-level-marker {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #111;
+  border-radius: 4px;
+}
+
+.cs-level-marker.normal {
+  background: #ffd36a;
+}
+
+.cs-level-marker.difficult {
+  background: #ff837d;
+}
+
+.cs-level-marker.nomercy {
+  background: #d37eff;
+}
+
+.cs-level-label {
+  letter-spacing: 0.08em;
 }
 
 .cs-header-icons {
@@ -71,6 +109,11 @@
 
 .cs-icon-btn:hover {
   color: white;
+}
+
+.cs-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .cs-icon-btn svg {
@@ -160,6 +203,10 @@
 
 .cs-character-box.blue { background-color: #2196f3; }
 .cs-character-box.red { background-color: #f44336; }
+.cs-character-box.green { background-color: #43a047; }
+.cs-character-box.yellow { background-color: #fdd835; }
+.cs-character-box.purple { background-color: #8e24aa; }
+.cs-character-box.orange { background-color: #fb8c00; }
 
 /* Arrows for selection */
 .cs-select-arrow {
@@ -264,6 +311,13 @@
   transform: translateY(-2px);
 }
 
+.cs-settings-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 90;
+}
+
 /* --- SETTINGS SIDEBAR --- */
 .cs-settings-sidebar {
   position: absolute;
@@ -315,6 +369,25 @@
   justify-content: space-between;
 }
 
+.cs-settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.cs-settings-label {
+  font-size: 0.65rem;
+  color: #bdbdbd;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.cs-settings-diff-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+
 .cs-settings-btn {
   background-color: #cccccc;
   color: black;
@@ -342,6 +415,30 @@
 .cs-settings-btn:hover {
   background-color: #fff;
   transform: translateY(-2px);
+}
+
+.cs-settings-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cs-settings-btn.active {
+  border-color: #00f0ff;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+}
+
+.cs-diff-btn.normal {
+  background-color: #ffb300;
+}
+
+.cs-diff-btn.difficult {
+  background-color: #ff3b30;
+  color: #fff;
+}
+
+.cs-diff-btn.nomercy {
+  background-color: #a200ff;
+  color: #fff;
 }
 
 /* --- RESPONSIVE --- */

@@ -3,6 +3,26 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
 import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser } from '../services/api';
 
+const CHARACTER_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'orange'];
+
+const DIFFICULTY_META = {
+  normal: { label: 'NORMAL', className: 'normal' },
+  difficult: { label: 'DIFFICULT', className: 'difficult' },
+  no_mercy: { label: 'NO MERCY', className: 'nomercy' },
+};
+
+function normalizeDifficulty(value) {
+  if (value === 'no_mercy') return 'no_mercy';
+  if (value === 'difficult' || value === 'dificult') return 'difficult';
+  return 'normal';
+}
+
+function getRandomColor(exclude = '') {
+  const filtered = CHARACTER_COLORS.filter((color) => color !== exclude);
+  const pool = filtered.length > 0 ? filtered : CHARACTER_COLORS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function resolveRoomCode(roomData, fallbackCode = '') {
   const normalizedFallback = String(fallbackCode || '').trim().toUpperCase();
   if (normalizedFallback) return normalizedFallback;
@@ -35,7 +55,7 @@ function normalizePlayerCharacters(roomData, fallbackCharacters = {}) {
   const normalizedCharacters = {};
 
   for (const playerId of players) {
-    normalizedCharacters[playerId] = mergedCharacters[playerId] || 'blue';
+    normalizedCharacters[playerId] = mergedCharacters[playerId] || getRandomColor();
   }
 
   return normalizedCharacters;
@@ -85,27 +105,39 @@ export default function CharacterSelection() {
   );
   const [usernamesById, setUsernamesById] = useState({});
   const [activeRoomId, setActiveRoomId] = useState('');
+  const [connectingPlayerIds, setConnectingPlayerIds] = useState([]);
   const leaveTriggeredRef = useRef(false);
   const wsRef = useRef(null);
+  const refreshTimerRef = useRef(null);
+  const roomClosedRef = useRef(false);
 
   const players = resolvePlayersCount(room);
   const maxPlayers = 4;
   const occupiedSlots = Math.max(0, players - 1);
+  const difficultyKey = normalizeDifficulty(room?.difficulty);
+  const difficultyMeta = DIFFICULTY_META[difficultyKey];
   const roomPlayers = Array.isArray(room?.players) ? room.players : [];
   const hostId = room?.hostId || roomPlayers[0] || null;
   const joinerIds = useMemo(
     () => roomPlayers.filter((id) => id !== hostId),
     [hostId, roomPlayers],
   );
+  const connectingJoinerIds = useMemo(
+    () => connectingPlayerIds.filter((playerId) => !joinerIds.includes(playerId) && playerId !== hostId),
+    [connectingPlayerIds, hostId, joinerIds],
+  );
   const joinerSlots = useMemo(
-    () => Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => joinerIds[i] || null),
-    [joinerIds, maxPlayers],
+    () => {
+      const fill = [...joinerIds, ...connectingJoinerIds];
+      return Array.from({ length: Math.max(0, maxPlayers - 1) }, (_, i) => fill[i] || null);
+    },
+    [joinerIds, connectingJoinerIds, maxPlayers],
   );
 
   const resolveDisplayName = (userId, fallback = 'PLAYER') => {
     if (!userId) return fallback;
     if (userId === currentUserId) return playerName;
-    return usernamesById[userId] || `PLAYER ${userId.slice(0, 5).toUpperCase()}`;
+    return usernamesById[userId] || fallback;
   };
 
   const getPlayerColor = (userId) => {
@@ -134,7 +166,7 @@ export default function CharacterSelection() {
   const handleToggleCharacterForPlayer = (userId) => {
     if (!userId || userId !== currentUserId || !activeRoomId) return;
     const currentColor = getPlayerColor(userId);
-    const nextColor = currentColor === 'blue' ? 'red' : 'blue';
+    const nextColor = getRandomColor(currentColor);
 
     setPlayerColorInRoom(userId, nextColor);
 
@@ -150,6 +182,16 @@ export default function CharacterSelection() {
   const leaveCurrentRoom = async (keepalive = false) => {
     if (!activeRoomId || !token || leaveTriggeredRef.current) return;
     leaveTriggeredRef.current = true;
+    roomClosedRef.current = true;
+
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.close();
+    }
 
     const isCurrentUserHost = room?.hostId
       ? room.hostId === currentUserId
@@ -161,7 +203,11 @@ export default function CharacterSelection() {
       } else {
         await leaveRoom(activeRoomId, { keepalive });
       }
-    } catch {
+    } catch (err) {
+      const message = (err?.message || '').toLowerCase();
+      if (message.includes('room not found')) {
+        return;
+      }
       // Fallback: if role detection was stale, try the join-leave endpoint as non-host.
       if (isCurrentUserHost) {
         leaveRoom(activeRoomId, { keepalive }).catch(() => {});
@@ -223,7 +269,6 @@ export default function CharacterSelection() {
 
   useEffect(() => {
     let activeWs;
-    let refreshTimer;
     let cancelled = false;
 
     const bootstrapRoom = async () => {
@@ -234,6 +279,8 @@ export default function CharacterSelection() {
 
       try {
         setRoomError('');
+        roomClosedRef.current = false;
+        setConnectingPlayerIds([]);
         const isHost = flowState.isHost !== false;
         let roomData;
         let roomId = flowState.roomId || '';
@@ -308,13 +355,22 @@ export default function CharacterSelection() {
                   ...(prev || {}),
                   players: updatedPlayers,
                   playersCount: updatedCount,
-                  playerCharacters: updatedCharacters,
+                  playerCharacters: normalizePlayerCharacters(
+                    {
+                      players: updatedPlayers,
+                      playerCharacters: updatedCharacters,
+                    },
+                    prev?.playerCharacters,
+                  ),
                   player: {
                     ...(prev?.player || {}),
                     count: updatedCount,
                   },
                 };
               });
+              if (Array.isArray(message.players)) {
+                setConnectingPlayerIds((prev) => prev.filter((id) => !message.players.includes(id)));
+              }
             }
             if (message.type === 'room-character-updated') {
               setRoom((prev) => {
@@ -333,6 +389,14 @@ export default function CharacterSelection() {
                 };
               });
             }
+            if (message.type === 'player-join-request') {
+              if (message.userId) {
+                setConnectingPlayerIds((prev) => {
+                  if (prev.includes(message.userId)) return prev;
+                  return [...prev, message.userId];
+                });
+              }
+            }
             if (message.type === 'player-join-request' || message.type === 'room-joined') {
               getRoom(roomData.id).then((latest) => {
                 if (!cancelled) {
@@ -340,12 +404,21 @@ export default function CharacterSelection() {
                     ...latest,
                     playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
                   }));
+                  const latestPlayers = Array.isArray(latest?.players) ? latest.players : [];
+                  setConnectingPlayerIds((prev) => prev.filter((id) => !latestPlayers.includes(id)));
                 }
               }).catch(() => {});
             }
             if (message.type === 'host-disconnected') {
-              setRoomError('Host disconnected.');
-              navigate('/join');
+              roomClosedRef.current = true;
+              if (refreshTimerRef.current) {
+                clearInterval(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+              }
+              setRoomError(message.message || 'El host se salio de la sala.');
+              setTimeout(() => {
+                navigate('/join');
+              }, 1200);
             }
             if (message.type === 'error') {
               setRoomError(message.message || 'Socket error');
@@ -359,7 +432,8 @@ export default function CharacterSelection() {
           // no-op: polling keeps UI updated while connected to the app
         };
 
-        refreshTimer = setInterval(() => {
+        refreshTimerRef.current = setInterval(() => {
+          if (roomClosedRef.current) return;
           getRoom(roomData.id)
             .then((latest) => {
               if (!cancelled) {
@@ -367,6 +441,8 @@ export default function CharacterSelection() {
                   ...latest,
                   playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
                 }));
+                const latestPlayers = Array.isArray(latest?.players) ? latest.players : [];
+                setConnectingPlayerIds((prev) => prev.filter((id) => !latestPlayers.includes(id)));
               }
             })
             .catch(() => {});
@@ -386,7 +462,10 @@ export default function CharacterSelection() {
 
     return () => {
       cancelled = true;
-      if (refreshTimer) clearInterval(refreshTimer);
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
       if (activeWs && activeWs.readyState === WebSocket.OPEN) {
         activeWs.close();
       }
@@ -436,10 +515,28 @@ export default function CharacterSelection() {
     setFriendsOnly(newValue);
     try {
       const updated = await updateRoom(room.id, { isPublic: !newValue });
-      setRoom(updated);
+      setRoom((prev) => ({
+        ...(prev || {}),
+        ...updated,
+        playerCharacters: normalizePlayerCharacters(updated, prev?.playerCharacters),
+      }));
     } catch (err) {
       console.error('Failed to update room:', err);
       setFriendsOnly(!newValue); // revert on error
+    }
+  };
+
+  const handleDifficultyChange = async (difficulty) => {
+    if (!room || !initialIsHost || !difficulty) return;
+    try {
+      const updated = await updateRoom(room.id, { difficulty });
+      setRoom((prev) => ({
+        ...(prev || {}),
+        ...updated,
+        playerCharacters: normalizePlayerCharacters(updated, prev?.playerCharacters),
+      }));
+    } catch (err) {
+      console.error('Failed to update difficulty:', err);
     }
   };
 
@@ -455,8 +552,9 @@ export default function CharacterSelection() {
           </svg>
         </button>
 
-        <div className="cs-level-box">
-          {room?.name || 'LOBBY'}
+        <div className={`cs-level-box ${difficultyMeta.className}`}>
+          <span className={`cs-level-marker ${difficultyMeta.className}`}></span>
+          <span className="cs-level-label">{difficultyMeta.label}</span>
         </div>
 
         <div className="cs-header-icons">
@@ -469,7 +567,12 @@ export default function CharacterSelection() {
             </svg>
           </button>
           {/* Settings icon */}
-          <button className="cs-icon-btn" onClick={toggleSettings}>
+          <button
+            className="cs-icon-btn"
+            onClick={toggleSettings}
+            disabled={!initialIsHost}
+            title={initialIsHost ? 'Room settings' : 'Only host can edit settings'}
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -517,14 +620,18 @@ export default function CharacterSelection() {
         </div>
 
         {/* OTHER SLOTS (joiners fill left to right) */}
-        {joinerSlots.map((joinerId, index) => (
+        {joinerSlots.map((joinerId, index) => {
+          const isConnecting = Boolean(joinerId) && connectingJoinerIds.includes(joinerId);
+          return (
           <div className="cs-slot" key={index}>
             <div className="cs-slot-header">
-              {joinerId
-                ? (joinerId === currentUserId
-                  ? `${resolveDisplayName(joinerId)} (YOU)`
-                  : resolveDisplayName(joinerId, `PLAYER ${index + 2}`))
-                : 'WAITING...'}
+              {isConnecting
+                ? 'Bitch Conecting...'
+                : (joinerId
+                  ? (joinerId === currentUserId
+                    ? `${resolveDisplayName(joinerId)} (YOU)`
+                    : resolveDisplayName(joinerId, `PLAYER ${index + 2}`))
+                  : 'WAITING...')}
             </div>
             
             {!joinerId && (
@@ -535,7 +642,13 @@ export default function CharacterSelection() {
               </div>
             )}
 
-            {joinerId && (
+            {isConnecting && (
+              <div className="cs-slot-body connecting">
+                <div className="cs-spinner"></div>
+              </div>
+            )}
+
+            {joinerId && !isConnecting && (
               <div className="cs-slot-body">
                 <div
                   className="cs-select-arrow up"
@@ -559,9 +672,12 @@ export default function CharacterSelection() {
               <div className="cs-equip-box"></div>
             </div>
           </div>
-        ))}
+        );
+        })}
 
       </div>
+
+      {isSettingsOpen && <div className="cs-settings-overlay" onClick={toggleSettings}></div>}
 
       {/* SETTINGS SIDEBAR (Toggled by Gear Icon) */}
       <div className={`cs-settings-sidebar ${isSettingsOpen ? 'open' : ''}`}>
@@ -576,11 +692,28 @@ export default function CharacterSelection() {
           <button className="cs-settings-btn">{Math.max(players, occupiedSlots + 1)}/{maxPlayers}</button>
         </div>
 
+        <div className="cs-settings-column">
+          <div className="cs-settings-label">DIFFICULTY</div>
+          <div className="cs-settings-diff-grid">
+            {Object.entries(DIFFICULTY_META).map(([value, meta]) => (
+              <button
+                key={value}
+                className={`cs-settings-btn cs-diff-btn ${meta.className} ${difficultyKey === value ? 'active' : ''}`}
+                onClick={() => handleDifficultyChange(value)}
+                disabled={!initialIsHost}
+              >
+                {meta.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="cs-settings-row">
           <button className="cs-settings-btn">FRIENDS ONLY</button>
           <button 
             className={`cs-settings-btn ${friendsOnly ? 'active' : ''}`} 
             onClick={handleToggleFriendsOnly}
+            disabled={!initialIsHost}
           >
             {friendsOnly ? '✓ ON' : '✗ OFF'}
           </button>

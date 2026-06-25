@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
 import { registerUser } from '../services/api';
 
-function validateRegisterForm({ username, email, password }) {
+function validateRegisterForm({ username, email, password, confirmPassword }) {
   const cleanUsername = username.trim();
   const cleanEmail = email.trim();
 
@@ -19,12 +19,16 @@ function validateRegisterForm({ username, email, password }) {
     return 'La contraseña debe tener al menos 6 caracteres.';
   }
 
+  if (password !== confirmPassword) {
+    return 'Las contraseñas no coinciden.';
+  }
+
   return '';
 }
 
 export default function Register() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,6 +46,7 @@ export default function Register() {
       username: form.username.trim(),
       email: form.email.trim(),
       password: form.password,
+      confirmPassword: form.confirmPassword,
     };
 
     const validationError = validateRegisterForm(payload);
@@ -121,6 +126,19 @@ export default function Register() {
               type="password"
               placeholder="Min 6 characters"
               value={form.password}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="confirmPassword">Confirm Password</label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              placeholder="Repeat your password"
+              value={form.confirmPassword}
               onChange={handleChange}
               required
             />
