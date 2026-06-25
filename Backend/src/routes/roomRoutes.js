@@ -2,7 +2,7 @@ const { randomUUID } = require('crypto');
 const { z } = require('zod');
 const redis = require('../config/redis');
 const authenticate = require('../middleware/auth');
-const { addPlayer, removePlayer } = require('../utils/roomUtils');
+const { addPlayer, removePlayer, getRandomCharacterColor } = require('../utils/roomUtils');
 
 const ROOM_TTL = 7200; // seconds
 const PUBLIC_ROOMS_KEY = 'rooms:public';
@@ -19,6 +19,17 @@ const createRoomSchema = z.object({
   difficulty: z.enum(['normal', 'difficult', 'no_mercy']).default('normal'),
 });
 
+const updateRoomSchema = z
+  .object({
+    name: z.string().min(3).max(30).trim().optional(),
+    map: z.string().trim().optional(),
+    isPublic: z.boolean().optional(),
+    difficulty: z.enum(['normal', 'difficult', 'no_mercy']).optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: 'No settings provided',
+  });
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -32,7 +43,7 @@ function sanitiseRoom(data) {
     : {};
   const playerCharacters = {};
   for (const playerId of players) {
-    playerCharacters[playerId] = rawCharacters[playerId] || 'blue';
+    playerCharacters[playerId] = rawCharacters[playerId] || getRandomCharacterColor();
   }
 
   return {
@@ -88,7 +99,7 @@ async function roomRoutes(fastify) {
       map,
       maxPlayers,
       players: [hostId],
-      playerCharacters: { [hostId]: 'blue' },
+      playerCharacters: { [hostId]: getRandomCharacterColor() },
       hasPassword,
       isPublic,
       createdAt,
@@ -166,6 +177,70 @@ async function roomRoutes(fastify) {
     } catch {
       return reply.status(500).send({ message: 'Corrupted room data' });
     }
+  });
+
+  /**
+   * PATCH /api/rooms/:roomId
+   * Update host-controlled room settings.
+   */
+  fastify.patch('/rooms/:roomId', { preHandler: authenticate }, async (request, reply) => {
+    const { roomId } = request.params;
+
+    if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
+      return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const parsed = updateRoomSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ message: 'Validation error', errors: parsed.error.flatten() });
+    }
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) {
+      return reply.status(404).send({ message: 'Room not found' });
+    }
+
+    let room;
+    try {
+      room = JSON.parse(raw);
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+
+    if (room.hostId !== request.user.id) {
+      return reply.status(403).send({ message: 'Only the host can update room settings' });
+    }
+
+    const nextRoom = sanitiseRoom({
+      ...room,
+      ...parsed.data,
+      id: room.id,
+      hostId: room.hostId,
+      players: Array.isArray(room.players) ? room.players : [room.hostId],
+      playerCharacters: room.playerCharacters,
+      hasPassword: room.hasPassword,
+      maxPlayers: room.maxPlayers,
+      createdAt: room.createdAt,
+    });
+
+    const ttl = await redis.ttl(roomKey(roomId));
+    const pipeline = redis.pipeline();
+
+    if (ttl > 0) {
+      pipeline.set(roomKey(roomId), JSON.stringify(nextRoom), 'EX', ttl);
+    } else {
+      pipeline.set(roomKey(roomId), JSON.stringify(nextRoom), 'EX', ROOM_TTL);
+    }
+
+    if (nextRoom.isPublic && !nextRoom.hasPassword) {
+      pipeline.zadd(PUBLIC_ROOMS_KEY, Date.now(), roomId);
+    } else {
+      pipeline.zrem(PUBLIC_ROOMS_KEY, roomId);
+    }
+
+    await pipeline.exec();
+
+    return reply.send(nextRoom);
   });
 
   /**
@@ -345,6 +420,13 @@ async function roomRoutes(fastify) {
     pipeline.del(`room:${roomId}:pwd`);
     pipeline.del(`room:code:${roomCodeFromRoomId(roomId)}`);
     pipeline.zrem(PUBLIC_ROOMS_KEY, roomId);
+
+    if (Array.isArray(room.players)) {
+      for (const playerId of room.players) {
+        pipeline.del(`player:${playerId}:room`);
+      }
+    }
+
     await pipeline.exec();
 
     return reply.send({ success: true });

@@ -24,11 +24,16 @@
 const uWS = require('uWebSockets.js');
 const redis = require('./config/redis');
 const lucia = require('./config/auth');
-const { addPlayer, removePlayer, getPlayerRoom } = require('./utils/roomUtils');
+const {
+  addPlayer,
+  removePlayer,
+  CHARACTER_COLORS,
+  getRandomCharacterColor,
+} = require('./utils/roomUtils');
 
 const WS_PORT = parseInt(process.env.WS_PORT || '9001', 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const ALLOWED_CHARACTER_COLORS = new Set(['blue', 'red']);
+const ALLOWED_CHARACTER_COLORS = new Set(CHARACTER_COLORS);
 
 // roomId → Set<WebSocket>
 const rooms = new Map();
@@ -64,8 +69,15 @@ function getHost(roomId) {
   return null;
 }
 
+function roomCodeFromRoomId(roomId) {
+  return String(roomId || '')
+    .replace(/-/g, '')
+    .slice(0, 6)
+    .toUpperCase();
+}
+
 async function cleanupRoom(roomId) {
-  const roomCode = roomId.slice(0, 6).toUpperCase();
+  const roomCode = roomCodeFromRoomId(roomId);
   const pipeline = redis.pipeline();
   pipeline.del(`room:${roomId}`);
   pipeline.del(`room:${roomId}:pwd`);
@@ -274,9 +286,6 @@ app.ws('/signal', {
       case 'set-character-color': {
         const { color } = msg;
         if (!roomId) return sendError(ws, 'roomId required');
-        if (!ALLOWED_CHARACTER_COLORS.has(color)) {
-          return sendError(ws, 'Invalid character color');
-        }
         if (ws.roomId !== roomId) {
           return sendError(ws, 'Socket is not in this room');
         }
@@ -299,13 +308,19 @@ app.ws('/signal', {
           room.playerCharacters = {};
         }
 
-        room.playerCharacters[ws.userId] = color;
+        const currentColor = room.playerCharacters[ws.userId] || '';
+        const normalizedColor = String(color || '').toLowerCase();
+        const nextColor = ALLOWED_CHARACTER_COLORS.has(normalizedColor)
+          ? normalizedColor
+          : getRandomCharacterColor(currentColor);
+
+        room.playerCharacters[ws.userId] = nextColor;
         await redis.set(`room:${roomId}`, JSON.stringify(room), 'KEEPTTL');
 
         broadcast(roomId, {
           type: 'room-character-updated',
           userId: ws.userId,
-          color,
+          color: nextColor,
           playerCharacters: room.playerCharacters,
         });
         break;
@@ -332,7 +347,10 @@ app.ws('/signal', {
       if (isHost) {
         // Notify remaining players and clean up
         for (const peer of peers) {
-          send(peer, { type: 'host-disconnected' });
+          send(peer, {
+            type: 'host-disconnected',
+            message: 'El host se salio de la sala.',
+          });
         }
         await cleanupRoom(roomId);
         console.info('[Signal] Host disconnected – room cleaned up roomId=%s', roomId);

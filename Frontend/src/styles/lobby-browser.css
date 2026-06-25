@@ -41,13 +41,18 @@
   transform: translateY(-2px);
 }
 
+.lb-diff-btn.active {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
 .lb-diff-btn:active {
   transform: translateY(2px);
   box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
 }
 
 .lb-diff-btn.normal { background-color: #FFB300; }
-.lb-diff-btn.dificult { background-color: #FF3B30; }
+.lb-diff-btn.difficult { background-color: #FF3B30; }
 .lb-diff-btn.nomercy { background-color: #A200FF; color: #fff; text-shadow: 1px 1px 0px rgba(0,0,0,0.8); }
 
 /* --- MAIN LAYOUT GRID --- */
@@ -129,6 +134,39 @@
 .lb-box.lvl { flex: 1; }
 .lb-box.admin { flex: 1; }
 .lb-box.players { flex: 0 0 80px; font-size: 0.7rem; }
+
+.lb-box.lvl.normal {
+  background: linear-gradient(180deg, #ffd36a 0%, #ffb300 100%);
+}
+
+.lb-box.lvl.difficult {
+  background: linear-gradient(180deg, #ff8d86 0%, #ff3b30 100%);
+  color: #fff;
+}
+
+.lb-box.lvl.nomercy {
+  background: linear-gradient(180deg, #cd6cff 0%, #8f00ff 100%);
+  color: #fff;
+}
+
+.lb-room-name {
+  display: block;
+  font-size: 0.75rem;
+}
+
+.lb-room-difficulty {
+  display: block;
+  font-size: 0.55rem;
+  margin-top: 0.35rem;
+  opacity: 0.85;
+  letter-spacing: 0.08em;
+}
+
+.lb-message {
+  text-align: center;
+  color: #ccc;
+  font-size: 0.75rem;
+}
 
 /* Join Party Button */
 .lb-join-container {
