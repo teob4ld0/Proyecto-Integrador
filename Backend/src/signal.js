@@ -22,6 +22,7 @@
 'use strict';
 
 const uWS = require('uWebSockets.js');
+const { setupGameRoute } = require('./ws/gameServer');
 const redis = require('./config/redis');
 const lucia = require('./config/auth');
 const {
@@ -386,6 +387,10 @@ setInterval(() => {
     }
   }
 }, HEARTBEAT_INTERVAL_MS);
+
+// ── Game route ───────────────────────────────────────────────────────────────
+
+setupGameRoute(app);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 

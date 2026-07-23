@@ -18,7 +18,14 @@
     "ioredis": "^5.11.0",
     "lucia": "^3.2.2",
     "nodemailer": "^8.0.7",
+    "planck": "^1.4.2",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.44.0",
     "zod": "^4.4.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  },
+  "devDependencies": {
+    "ws": "^8.21.1"
   }
 }

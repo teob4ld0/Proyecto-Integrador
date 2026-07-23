@@ -75,4 +75,17 @@ db.exec(`
   );
 `);
 
+// ---- Migrations (columns added after initial schema) ----
+// SQLite does not support IF NOT EXISTS in ALTER TABLE, so we catch the error.
+const migrations = [
+  'ALTER TABLE user ADD COLUMN danmas INTEGER NOT NULL DEFAULT 0',
+];
+for (const sql of migrations) {
+  try {
+    db.exec(sql);
+  } catch {
+    // Column already exists – ignore
+  }
+}
+
 module.exports = db;

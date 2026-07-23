@@ -1,0 +1,28 @@
+# ---- Servidor ----
+PORT=8080
+HOST=0.0.0.0
+NODE_ENV=development
+
+# ---- Base de datos (SQLite) ----
+# Ruta al archivo .db. Por defecto: data/danmakrew.db (relativo a Backend/)
+DB_PATH=./data/danmakrew.db
+
+# ---- Redis ----
+# URL de conexión a Redis. En Docker Compose usar redis://redis:6379
+REDIS_URL=redis://127.0.0.1:6379
+
+# ---- Servidor de señalización WebSocket (µWebSockets.js) ----
+WS_PORT=9001
+
+# ---- Mailer (Nodemailer / Gmail) ----
+# Usa un correo de Gmail y una "Contraseña de Aplicación" de 16 caracteres
+EMAIL_USER=justanexamplemail@gmail.com
+EMAIL_PASS=just_an_example_password
+
+# ---- Frontend ----
+# En desarrollo usa ngrok, en producción usa tu dominio real
+FRONTEND_URL=http://localhost:3000
+JWT_AUDIENCE=DanmakrewUsers
+
+# ---- Redis (Opcional - Próxima implementación) ----
+# REDIS_URL=redis://default:tu_contraseña@tu_endpoint_redis:puerto
