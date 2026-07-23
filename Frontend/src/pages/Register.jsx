@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { registerUser } from '../services/api';
+import { registerUser, resendVerificationEmail } from '../services/api';
 
 function validateRegisterForm({ username, email, password, confirmPassword }) {
   const cleanUsername = username.trim();
@@ -32,6 +32,11 @@ export default function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const canResend =
+    error.toLowerCase().includes('ya está registrado') ||
+    success.toLowerCase().includes('no verificado');
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -65,6 +70,27 @@ export default function Register() {
       setError(err.message || 'Registration failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const email = form.email.trim();
+    if (!email) {
+      setError('Ingresá tu email para reenviar la verificación.');
+      return;
+    }
+
+    setResending(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const res = await resendVerificationEmail(email);
+      setSuccess(res.message || 'Correo de verificación reenviado.');
+    } catch (err) {
+      setError(err.message || 'No se pudo reenviar el correo de verificación.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -147,6 +173,18 @@ export default function Register() {
           <button type="submit" className="btn-login-submit" disabled={loading}>
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
+
+          {canResend && (
+            <button
+              type="button"
+              className="btn-login-submit"
+              onClick={handleResendVerification}
+              disabled={resending}
+              style={{ marginTop: '0.75rem', opacity: resending ? 0.7 : 1 }}
+            >
+              {resending ? 'Reenviando...' : 'Reenviar correo de verificación'}
+            </button>
+          )}
         </form>
 
         <div className="auth-link">

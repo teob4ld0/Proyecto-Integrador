@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser } from '../services/api';
+import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken } from '../services/api';
 
 const CHARACTER_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'orange'];
 
@@ -87,7 +87,7 @@ function getWsSignalUrl() {
 export default function CharacterSelection() {
   const navigate = useNavigate();
   const location = useLocation();
-  const token = localStorage.getItem('danma_token');
+  const token = getIdToken();
   const flowState = location.state || {};
   const initialIsHost = flowState.isHost !== false;
   
@@ -97,12 +97,8 @@ export default function CharacterSelection() {
   const [room, setRoom] = useState(null);
   const [roomError, setRoomError] = useState('');
   const [friendsOnly, setFriendsOnly] = useState(false);
-  const [playerName, setPlayerName] = useState(
-    localStorage.getItem('danma_username') || 'PLAYER'
-  );
-  const [currentUserId, setCurrentUserId] = useState(
-    localStorage.getItem('danma_userId') || ''
-  );
+  const [playerName, setPlayerName] = useState('PLAYER');
+  const [currentUserId, setCurrentUserId] = useState('');
   const [usernamesById, setUsernamesById] = useState({});
   const [activeRoomId, setActiveRoomId] = useState('');
   const [connectingPlayerIds, setConnectingPlayerIds] = useState([]);
@@ -215,23 +211,20 @@ export default function CharacterSelection() {
     }
   };
 
-  // Fetch username if not in localStorage
+  // Current user identity is kept in memory only.
   useEffect(() => {
-    if (!localStorage.getItem('danma_username') && token) {
-      getCurrentUser()
-        .then((user) => {
-          if (user.username) {
-            localStorage.setItem('danma_username', user.username);
-            setPlayerName(user.username);
-          }
-          if (user.id || user.userId) {
-            const userId = user.id || user.userId;
-            localStorage.setItem('danma_userId', userId);
-            setCurrentUserId(userId);
-          }
-        })
-        .catch(() => {});
-    }
+    if (!token) return;
+
+    getCurrentUser()
+      .then((user) => {
+        if (user?.username) {
+          setPlayerName(user.username);
+        }
+        if (user?.id || user?.userId) {
+          setCurrentUserId(user.id || user.userId);
+        }
+      })
+      .catch(() => {});
   }, [token]);
 
   useEffect(() => {

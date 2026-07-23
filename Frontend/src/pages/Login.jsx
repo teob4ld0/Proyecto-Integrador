@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { loginUser } from '../services/api'
+import { loginUser, resendVerificationEmail, setIdToken } from '../services/api'
 import BulletBackground from '../components/BulletBackground'
 
 export default function Login() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -16,19 +18,40 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setInfo('')
     setLoading(true)
 
     try {
       const data = await loginUser(form)
       if (data.token) {
-        localStorage.setItem('danma_token', data.token)
+        setIdToken(data.token)
       }
-      // username ya se guarda en api.js automáticamente
       navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Login failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    const email = form.email.trim()
+    if (!email) {
+      setError('Ingresa tu email para reenviar la verificación.')
+      return
+    }
+
+    setResending(true)
+    setError('')
+    setInfo('')
+
+    try {
+      const res = await resendVerificationEmail(email)
+      setInfo(res.message || 'Correo de verificación reenviado.')
+    } catch (err) {
+      setError(err.message || 'No se pudo reenviar el correo de verificación.')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -46,6 +69,7 @@ export default function Login() {
         <h2>Log In</h2>
 
         {error && <div className="message error">{error}</div>}
+        {info && <div className="message success">{info}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -78,6 +102,16 @@ export default function Login() {
           {/* Cambiamos a una clase dedicada para estilizar el botón según el nuevo formato */}
           <button type="submit" className="btn-login-submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Enter the Arena'}
+          </button>
+
+          <button
+            type="button"
+            className="btn-login-submit"
+            onClick={handleResendVerification}
+            disabled={resending}
+            style={{ marginTop: '0.75rem', opacity: resending ? 0.7 : 1 }}
+          >
+            {resending ? 'Reenviando...' : 'Reenviar correo de verificación'}
           </button>
         </form>
 

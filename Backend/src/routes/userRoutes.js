@@ -23,6 +23,10 @@ const loginSchema = z.object({
   password: z.string().min(1, 'La contraseña es requerida.'),
 });
 
+const resendVerificationSchema = z.object({
+  email: z.string().email('Email inválido.'),
+});
+
 async function userRoutes(fastify) {
   // POST /register
   fastify.post('/register', async (request, reply) => {
@@ -33,8 +37,24 @@ async function userRoutes(fastify) {
 
     const { username, email, password } = result.data;
 
-    if (User.findByEmail(email)) {
-      return reply.status(400).send({ message: 'El email ya está registrado.' });
+    const existingUser = User.findByEmail(email);
+    if (existingUser) {
+      if (existingUser.is_verified) {
+        return reply.status(400).send({ message: 'El email ya está registrado.' });
+      }
+
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      User.setVerificationToken(existingUser.id, verificationToken);
+
+      try {
+        await sendVerificationEmail(existingUser.email, existingUser.id, verificationToken);
+      } catch (err) {
+        fastify.log.warn({ err }, 'No se pudo reenviar el email de verificación.');
+      }
+
+      return reply.send({
+        message: 'Ese email ya está registrado, pero no verificado. Te reenviamos el correo de verificación.',
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -68,6 +88,37 @@ async function userRoutes(fastify) {
     User.verify(userId);
 
     return reply.send({ message: 'Correo verificado exitosamente. Ya puedes iniciar sesión.' });
+  });
+
+  // POST /resend-verification
+  fastify.post('/resend-verification', async (request, reply) => {
+    const result = resendVerificationSchema.safeParse(request.body);
+    if (!result.success) {
+      return reply.status(400).send({ message: result.error.issues[0].message });
+    }
+
+    const { email } = result.data;
+    const user = User.findByEmail(email);
+
+    if (!user) {
+      return reply.status(404).send({ message: 'No existe una cuenta con ese email.' });
+    }
+
+    if (user.is_verified) {
+      return reply.status(400).send({ message: 'Tu cuenta ya está verificada. Puedes iniciar sesión.' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    User.setVerificationToken(user.id, verificationToken);
+
+    try {
+      await sendVerificationEmail(user.email, user.id, verificationToken);
+    } catch (err) {
+      fastify.log.warn({ err }, 'No se pudo reenviar el email de verificación.');
+      return reply.status(500).send({ message: 'No se pudo reenviar el correo. Intenta nuevamente.' });
+    }
+
+    return reply.send({ message: 'Correo de verificación reenviado. Revisa tu bandeja.' });
   });
 
   // GET / — listar usuarios

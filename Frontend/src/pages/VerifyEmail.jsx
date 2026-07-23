@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { verifyEmail } from '../services/api';
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
@@ -22,26 +23,15 @@ export default function VerifyEmail() {
       return;
     }
 
-    // Construimos la URL igual que api.js para mantener consistencia
-    const apiUrl = import.meta.env.VITE_API_URL
-      ? `${import.meta.env.VITE_API_URL}/api`
-      : '/api';
-
-    // Disparamos al backend
-    fetch(`${apiUrl}/auth/verify-email?userId=${userId}&token=${token}&email=${email}`)
-      .then(async (res) => {
-        if (res.ok) {
-          setStatus('¡Cuenta verificada con éxito! Redirigiendo a la arena...');
-          // Esperamos 3 segundos y lo mandamos al login
-          setTimeout(() => navigate('/login'), 3000);
-        } else {
-          const errorText = await res.text();
-          setStatus(`No se pudo verificar: ${errorText}`);
-        }
+    // Reutilizamos el cliente API para evitar desfasajes de URL/base path.
+    verifyEmail({ userId, token, email })
+      .then(() => {
+        setStatus('¡Cuenta verificada con éxito! Redirigiendo a la arena...');
+        setTimeout(() => navigate('/login'), 3000);
       })
       .catch((err) => {
-        console.error("Fallo catastrófico:", err);
-        setStatus('Error de conexión con el servidor. ¿Está el backend encendido?');
+        console.error('Fallo al verificar email:', err);
+        setStatus(`No se pudo verificar: ${err.message || 'Error desconocido.'}`);
       });
   }, [searchParams, navigate]);
 
