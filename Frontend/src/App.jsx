@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import JoinSelection from './pages/JoinSelection'
 import CharacterSelection from './pages/CharacterSelection'
 import LobbyBrowser from './pages/LobbyBrowser'
+import Game from './pages/Game'
 import OrientationGuard from './components/OrientationGuard'
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         {/* 2. Agregar la nueva ruta del lobby de personajes */}
         <Route path="/character-selection" element={<CharacterSelection />} />
         <Route path="/lobby-browser" element={<LobbyBrowser />} />
+        <Route path="/game" element={<Game />} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
