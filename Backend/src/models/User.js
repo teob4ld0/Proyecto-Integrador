@@ -30,6 +30,12 @@ const User = {
       'UPDATE user SET is_verified = 1, verification_token = NULL WHERE id = ?'
     ).run(id);
   },
+
+  setVerificationToken(id, token) {
+    db.prepare(
+      'UPDATE user SET verification_token = ?, is_verified = 0 WHERE id = ?'
+    ).run(token, id);
+  },
 };
 
 module.exports = User;

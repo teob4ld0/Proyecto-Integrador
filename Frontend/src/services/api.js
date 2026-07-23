@@ -3,21 +3,46 @@ if (apiEnv && apiEnv.endsWith('/')) apiEnv = apiEnv.slice(0, -1);
 const API_BASE = apiEnv 
   ? (apiEnv.endsWith('/api') ? apiEnv : `${apiEnv}/api`)
   : '/api';
+const ID_TOKEN_KEY = 'danma_idtoken';
+const LEGACY_TOKEN_KEY = 'danma_token';
 
 const HEADERS_JSON = {
   'Content-Type': 'application/json',
   'ngrok-skip-browser-warning': 'true',
 };
 
+export function getIdToken() {
+  const current = localStorage.getItem(ID_TOKEN_KEY);
+  if (current) return current;
+
+  const legacy = localStorage.getItem(LEGACY_TOKEN_KEY);
+  if (legacy) {
+    localStorage.setItem(ID_TOKEN_KEY, legacy);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    return legacy;
+  }
+
+  return '';
+}
+
+export function setIdToken(token) {
+  if (!token) {
+    localStorage.removeItem(ID_TOKEN_KEY);
+    return;
+  }
+  localStorage.setItem(ID_TOKEN_KEY, token);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
+}
+
 function authHeaders() {
-  const token = localStorage.getItem('danma_token');
+  const token = getIdToken();
   const headers = { ...HEADERS_JSON };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 }
 
 function authHeadersNoBody() {
-  const token = localStorage.getItem('danma_token');
+  const token = getIdToken();
   const headers = { 'ngrok-skip-browser-warning': 'true' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
@@ -61,11 +86,7 @@ export async function loginUser({ email, password }) {
     headers: HEADERS_JSON,
     body: JSON.stringify({ email, password }),
   });
-  const data = await handleResponse(res);
-  // Guardar username y userId en localStorage
-  if (data.username) localStorage.setItem('danma_username', data.username);
-  if (data.userId) localStorage.setItem('danma_userId', data.userId);
-  return data;
+  return handleResponse(res);
 }
 
 export async function getCurrentUser() {
@@ -92,10 +113,18 @@ export async function verifyEmail({ userId, token, email }) {
   return handleResponse(res);
 }
 
+export async function resendVerificationEmail(email) {
+  const res = await fetch(`${API_BASE}/auth/resend-verification`, {
+    method: 'POST',
+    headers: HEADERS_JSON,
+    body: JSON.stringify({ email }),
+  });
+  return handleResponse(res);
+}
+
 export function logout() {
-  localStorage.removeItem('danma_token');
-  localStorage.removeItem('danma_username');
-  localStorage.removeItem('danma_userId');
+  localStorage.removeItem(ID_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
 }
 
 // ==========================================

@@ -8,24 +8,28 @@ import JoinSelection from './pages/JoinSelection'
 import CharacterSelection from './pages/CharacterSelection'
 import LobbyBrowser from './pages/LobbyBrowser'
 import Game from './pages/Game'
+import OrientationGuard from './components/OrientationGuard'
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/join" element={<JoinSelection />} />
-      
-      {/* 2. Agregar la nueva ruta del lobby de personajes */}
-      <Route path="/character-selection" element={<CharacterSelection />} />
-      <Route path="/lobby-browser" element={<LobbyBrowser />} />
-      <Route path="/game" element={<Game />} />
-      
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <OrientationGuard />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/join" element={<JoinSelection />} />
+        
+        {/* 2. Agregar la nueva ruta del lobby de personajes */}
+        <Route path="/character-selection" element={<CharacterSelection />} />
+        <Route path="/lobby-browser" element={<LobbyBrowser />} />
+        <Route path="/game" element={<Game />} />
+        
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   )
 }
 
