@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Application, Graphics } from 'pixi.js';
+import { Application, Graphics, Container } from 'pixi.js';
 import InterpolationWorker from '../workers/interpolation.worker.js?worker';
 
 const WORLD_WIDTH = 800;
@@ -47,6 +47,10 @@ export default function Game() {
 
     // playerId → { graphic, colorIndex }
     const sprites = new Map();
+    // Bullet pool: inactive Graphics objects ready to be reused
+    const bulletPool    = [];
+    const bulletSprites = new Map(); // bulletId → Graphics
+    let bulletContainer;
     let selfId = null;
     let colorCounter = 0;
 
@@ -78,11 +82,15 @@ export default function Game() {
       });
       app.stage.addChild(field);
 
+      // Dedicated container for bullet sprites (rendered above the field, below players)
+      bulletContainer = new Container();
+      app.stage.addChild(bulletContainer);
+
       // ── Web Worker ──────────────────────────────────────────────────────────
       worker = new InterpolationWorker();
 
       worker.onmessage = (e) => {
-        const { players } = e.data;
+        const { players, bullets } = e.data;
         const seen = new Set();
 
         for (const player of players) {
@@ -111,6 +119,35 @@ export default function Game() {
         }
 
         if (mounted) setPlayerCount(seen.size);
+
+        // ── Bullet rendering ──────────────────────────────────────────────────
+        const seenBullets = new Set();
+        for (const b of (bullets || [])) {
+          seenBullets.add(b.id);
+          if (!bulletSprites.has(b.id)) {
+            // Reuse pooled graphic or create a new one
+            let g = bulletPool.pop();
+            if (!g) {
+              g = new Graphics();
+              g.circle(0, 0, b.radius).fill(0xff7744);
+              bulletContainer.addChild(g);
+            }
+            g.visible = true;
+            bulletSprites.set(b.id, g);
+          }
+          const g = bulletSprites.get(b.id);
+          g.x = b.x;
+          g.y = b.y;
+        }
+
+        // Return bullets no longer in the snapshot to pool
+        for (const [id, g] of bulletSprites) {
+          if (!seenBullets.has(id)) {
+            g.visible = false;
+            bulletSprites.delete(id);
+            bulletPool.push(g);
+          }
+        }
       };
 
       // ── WebSocket ───────────────────────────────────────────────────────────
@@ -133,6 +170,15 @@ export default function Game() {
           case 'snapshot':
             worker.postMessage({ type: 'snapshot', data: msg });
             break;
+          case 'hit': {
+            // Flash the hit player sprite briefly (placeholder damage feedback)
+            const hitSprite = sprites.get(msg.playerId);
+            if (hitSprite) {
+              hitSprite.tint = 0xff2222;
+              setTimeout(() => { if (hitSprite) hitSprite.tint = 0xffffff; }, 150);
+            }
+            break;
+          }
           case 'player-left':
           case 'player-disconnected': {
             const g = sprites.get(msg.playerId);
@@ -172,7 +218,8 @@ export default function Game() {
         if (keys.has('ArrowRight') || keys.has('KeyD')) dx += 1;
         if (keys.has('ArrowUp') || keys.has('KeyW')) dy -= 1;
         if (keys.has('ArrowDown') || keys.has('KeyS')) dy += 1;
-        ws.send(JSON.stringify({ type: 'input', dx, dy, action: null }));
+        const action = keys.has('Space') ? 'shoot' : null;
+        ws.send(JSON.stringify({ type: 'input', dx, dy, action }));
       }, 1000 / 60);
 
       // Store for cleanup

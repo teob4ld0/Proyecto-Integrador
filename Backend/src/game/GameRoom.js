@@ -1,6 +1,10 @@
 'use strict';
 
-const { createWorld, addPlayerBody, applyInput } = require('./physics');
+const { createWorld, addPlayerBody, applyInput, PLAYER_RADIUS } = require('./physics');
+const { BulletSystem } = require('./systems/BulletSystem');
+
+const SHOOT_COOLDOWN    = 0.3;  // seconds between shots (300 ms)
+const BULLET_SPAWN_DIST = PLAYER_RADIUS + 6; // spawn bullet just outside the player hitbox
 
 const SPAWN_POSITIONS = [
   { x: 100, y: 100 },
@@ -12,26 +16,25 @@ const SPAWN_POSITIONS = [
 class GameRoom {
   constructor(roomId) {
     this.roomId = roomId;
-    /** @type {Map<string, { body: import('planck-js').Body, input: { dx: number, dy: number, action: null|string }, angle: number, active: boolean }>} */
     this.players = new Map();
-    this.bullets = [];
+    this.bulletSystem = new BulletSystem();
     this.world = createWorld();
     this.tick = 0;
   }
 
   addPlayer(playerId) {
     if (this.players.has(playerId)) {
-      // Reconnect – just mark active again
       this.players.get(playerId).active = true;
       return;
     }
     const spawn = SPAWN_POSITIONS[this.players.size % SPAWN_POSITIONS.length];
-    const body = addPlayerBody(this.world, spawn.x, spawn.y);
+    const body  = addPlayerBody(this.world, spawn.x, spawn.y);
     this.players.set(playerId, {
       body,
-      input: { dx: 0, dy: 0, action: null },
-      angle: 0,
-      active: true,
+      input:         { dx: 0, dy: 0, action: null },
+      angle:         -Math.PI / 2, // default: facing up
+      shootCooldown: 0,
+      active:        true,
     });
   }
 
@@ -46,7 +49,7 @@ class GameRoom {
     const player = this.players.get(playerId);
     if (player) {
       player.active = false;
-      player.input = { dx: 0, dy: 0, action: null };
+      player.input  = { dx: 0, dy: 0, action: null };
     }
   }
 
@@ -57,17 +60,44 @@ class GameRoom {
     }
   }
 
+  /**
+   * Advance the simulation one tick.
+   * @returns {{ playerId, bulletId, ownerId }[]} hit events produced this tick
+   */
   update(deltaTime) {
-    for (const [, player] of this.players) {
+    for (const [id, player] of this.players) {
       if (player.active) {
+        const { dx, dy, action } = player.input;
+
+        // Update facing angle from movement direction
+        if (dx !== 0 || dy !== 0) {
+          player.angle = Math.atan2(dy, dx);
+        }
+
+        // Decrement shoot cooldown
+        if (player.shootCooldown > 0) {
+          player.shootCooldown = Math.max(0, player.shootCooldown - deltaTime);
+        }
+
+        // Process shoot action (server-authoritative rate limit)
+        if (action === 'shoot' && player.shootCooldown <= 0) {
+          const pos = player.body.getPosition();
+          const bx  = pos.x + Math.cos(player.angle) * BULLET_SPAWN_DIST;
+          const by  = pos.y + Math.sin(player.angle) * BULLET_SPAWN_DIST;
+          this.bulletSystem.spawn(id, bx, by, player.angle);
+          player.shootCooldown = SHOOT_COOLDOWN;
+        }
+
         applyInput(player.body, player.input);
       } else {
-        // Stop inactive players in place
         player.body.setLinearVelocity({ x: 0, y: 0 });
       }
     }
+
     this.world.step(deltaTime);
+    const hits = this.bulletSystem.update(deltaTime, this.players);
     this.tick++;
+    return hits;
   }
 
   getState() {
@@ -77,10 +107,10 @@ class GameRoom {
       players.push({ id, x: pos.x, y: pos.y, angle: player.angle });
     }
     return {
-      type: 'snapshot',
-      tick: this.tick,
+      type:    'snapshot',
+      tick:    this.tick,
       players,
-      bullets: this.bullets,
+      bullets: this.bulletSystem.getState(),
     };
   }
 }
