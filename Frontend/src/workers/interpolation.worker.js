@@ -75,14 +75,28 @@ function interpolateAndPost() {
     const n = nextMap.get(p.id);
     if (!n) return p;
     return {
-      id: p.id,
-      x: lerp(p.x, n.x, t),
-      y: lerp(p.y, n.y, t),
+      id:    p.id,
+      x:     lerp(p.x, n.x, t),
+      y:     lerp(p.y, n.y, t),
       angle: lerpAngle(p.angle, n.angle, t),
     };
   });
 
-  self.postMessage({ players, bullets: next.bullets || [] });
+  // Interpolate bullets the same way — lerp position by id between the two snapshots
+  const nextBullets = new Map((next.bullets || []).map((b) => [b.id, b]));
+
+  const bullets = (prev.bullets || []).map((b) => {
+    const n = nextBullets.get(b.id);
+    if (!n) return b; // bullet was destroyed before next snapshot — keep last position
+    return {
+      id:     b.id,
+      x:      lerp(b.x, n.x, t),
+      y:      lerp(b.y, n.y, t),
+      radius: b.radius,
+    };
+  });
+
+  self.postMessage({ players, bullets });
 }
 
 // Run at 60 FPS

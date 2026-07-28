@@ -1,8 +1,7 @@
 'use strict';
 
 const GameRoom = require('../game/GameRoom');
-const { updateBullets } = require('../game/bulletSystem');
-const lucia = require('../config/auth');
+const lucia    = require('../config/auth');
 
 const TICK_RATE = 60;
 const TICK_DELTA = 1 / TICK_RATE;
@@ -64,8 +63,10 @@ function startGameLoop(roomId) {
       return;
     }
 
-    room.update(TICK_DELTA);
-    updateBullets(room.world, TICK_DELTA);
+    const hits = room.update(TICK_DELTA);
+    for (const hit of hits) {
+      broadcastRoom(roomId, { type: 'hit', ...hit });
+    }
     tickCounter++;
 
     if (tickCounter >= BROADCAST_EVERY) {
@@ -185,12 +186,12 @@ function setupGameRoute(app) {
           const room = gameRooms.get(ws.roomId);
           if (!room) return;
 
-          // Clamp input values to prevent cheating
+          // Clamp movement values to prevent cheating
           const dx = typeof msg.dx === 'number' ? Math.max(-1, Math.min(1, msg.dx)) : 0;
           const dy = typeof msg.dy === 'number' ? Math.max(-1, Math.min(1, msg.dy)) : 0;
-          const action = msg.action === null ? null : undefined; // only null allowed for now
+          const action = msg.action === 'shoot' ? 'shoot' : null;
 
-          room.setInput(ws.userId, { dx, dy, action: action ?? null });
+          room.setInput(ws.userId, { dx, dy, action });
           break;
         }
 
