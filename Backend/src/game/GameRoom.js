@@ -31,7 +31,7 @@ class GameRoom {
 
   // ── Player management ───────────────────────────────────────────────────────
 
-  addPlayer(playerId) {
+  addPlayer(playerId, character = null) {
     if (this.players.has(playerId)) {
       this.players.get(playerId).active = true;
       return;
@@ -45,6 +45,7 @@ class GameRoom {
       shootCooldown: 0,
       active:        true,
       isReady:       false,
+      character,
     });
   }
 
@@ -171,7 +172,7 @@ class GameRoom {
     const players = [];
     for (const [id, player] of this.players) {
       const pos = player.body.getPosition();
-      players.push({ id, x: pos.x, y: pos.y, angle: player.angle, isReady: player.isReady });
+      players.push({ id, x: pos.x, y: pos.y, angle: player.angle, isReady: player.isReady, character: player.character });
     }
     return {
       type:        'snapshot',

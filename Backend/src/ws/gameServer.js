@@ -7,7 +7,7 @@ const redis    = require('../config/redis');
 const TICK_RATE = 60;
 const TICK_DELTA = 1 / TICK_RATE;
 const BROADCAST_EVERY = 3; // broadcast snapshot every 3 ticks → ~20 Hz
-const DISCONNECT_TIMEOUT_MS = 15_000;
+const DISCONNECT_TIMEOUT_MS = 25_000;
 
 // roomId → GameRoom
 const gameRooms = new Map();
@@ -181,8 +181,36 @@ function setupGameRoute(app) {
             if (!gameClients.has(roomId)) gameClients.set(roomId, new Set());
 
             const room = gameRooms.get(roomId);
+
+            // Block new (non-reconnecting) players from joining mid-game
+            if (room.phase === 'playing' && !room.players.has(ws.userId)) {
+              return send(ws, { type: 'error', message: 'La partida ya comenzó' });
+            }
+
             gameClients.get(roomId).add(ws);
-            room.addPlayer(ws.userId);
+
+            // Read character assigned during character selection from Redis room data
+            let character = null;
+            try {
+              const raw = await redis.get(`room:${roomId}`);
+              if (raw) {
+                const roomData = JSON.parse(raw);
+                character = roomData.playerCharacters?.[ws.userId] || null;
+              }
+            } catch { /* ignore */ }
+
+            room.addPlayer(ws.userId, character);
+
+            // Enforce unique characters — reject if another active player already has this one
+            if (character) {
+              for (const [pid, p] of room.players) {
+                if (pid !== ws.userId && p.active && p.character === character) {
+                  room.removePlayer(ws.userId);
+                  gameClients.get(roomId)?.delete(ws);
+                  return send(ws, { type: 'error', message: `El personaje '${character}' ya está en uso` });
+                }
+              }
+            }
 
             startGameLoop(roomId);
 
