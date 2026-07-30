@@ -38,8 +38,6 @@ services:
       context: ./Frontend
     ports:
       - "3000:3000"
-    depends_on:
-      - api
     restart: unless-stopped
 
 volumes:

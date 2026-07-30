@@ -2,6 +2,7 @@
 
 const GameRoom = require('../game/GameRoom');
 const lucia    = require('../config/auth');
+const redis    = require('../config/redis');
 
 const TICK_RATE = 60;
 const TICK_DELTA = 1 / TICK_RATE;
@@ -63,9 +64,12 @@ function startGameLoop(roomId) {
       return;
     }
 
-    const hits = room.update(TICK_DELTA);
+    const { hits, phaseChanged } = room.update(TICK_DELTA);
     for (const hit of hits) {
       broadcastRoom(roomId, { type: 'hit', ...hit });
+    }
+    if (phaseChanged) {
+      broadcastRoom(roomId, { type: 'phase', phase: phaseChanged });
     }
     tickCounter++;
 
@@ -148,36 +152,93 @@ function setupGameRoute(app) {
 
       switch (msg.type) {
         case 'join-game': {
-          const { roomId } = msg;
-          if (!roomId || !/^[0-9a-f-]{36}$/i.test(roomId)) {
-            return send(ws, { type: 'error', message: 'Invalid roomId' });
-          }
+          // Needs async for Redis lookup — wrap in IIFE to stay in sync handler
+          (async () => {
+            const { roomId } = msg;
+            if (!roomId || !/^[0-9a-f-]{36}$/i.test(roomId)) {
+              return send(ws, { type: 'error', message: 'Invalid roomId' });
+            }
 
-          // Cancel any pending disconnect timer for this player
-          const timerKey = `${roomId}:${ws.userId}`;
-          const existing = disconnectTimers.get(timerKey);
-          if (existing) {
-            clearTimeout(existing);
-            disconnectTimers.delete(timerKey);
-          }
+            // Cancel any pending disconnect timer for this player
+            const timerKey = `${roomId}:${ws.userId}`;
+            const existing = disconnectTimers.get(timerKey);
+            if (existing) {
+              clearTimeout(existing);
+              disconnectTimers.delete(timerKey);
+            }
 
-          ws.roomId = roomId;
+            ws.roomId = roomId;
 
-          if (!gameRooms.has(roomId)) gameRooms.set(roomId, new GameRoom(roomId));
-          if (!gameClients.has(roomId)) gameClients.set(roomId, new Set());
+            // Look up hostId from Redis on first room creation
+            if (!gameRooms.has(roomId)) {
+              let hostId = ws.userId; // fallback: first joiner is host
+              try {
+                const raw = await redis.get(`room:${roomId}`);
+                if (raw) hostId = JSON.parse(raw).hostId || ws.userId;
+              } catch { /* ignore */ }
+              gameRooms.set(roomId, new GameRoom(roomId, hostId));
+            }
+            if (!gameClients.has(roomId)) gameClients.set(roomId, new Set());
 
-          const room = gameRooms.get(roomId);
-          gameClients.get(roomId).add(ws);
-          room.addPlayer(ws.userId);
+            const room = gameRooms.get(roomId);
+            gameClients.get(roomId).add(ws);
+            room.addPlayer(ws.userId);
 
-          startGameLoop(roomId);
+            startGameLoop(roomId);
 
-          send(ws, {
-            type: 'joined',
-            playerId: ws.userId,
-            initialState: room.getState(),
+            send(ws, {
+              type:         'joined',
+              playerId:     ws.userId,
+              isHost:       ws.userId === room.hostId,
+              initialState: room.getState(),
+            });
+            broadcastRoom(roomId, { type: 'player-joined', playerId: ws.userId });
+            console.info('[Game] Player joined roomId=%s userId=%s', roomId, ws.userId);
+          })().catch(err => {
+            console.error('[Game] join-game error', err);
+            send(ws, { type: 'error', message: 'Internal error' });
           });
-          console.info('[Game] Player joined roomId=%s userId=%s', roomId, ws.userId);
+          break;
+        }
+
+        case 'start-ready': {
+          if (!ws.roomId) return;
+          const room = gameRooms.get(ws.roomId);
+          if (!room) return;
+
+          if (room.startReadyCheck(ws.userId)) {
+            broadcastRoom(ws.roomId, {
+              type:    'phase',
+              phase:   'ready',
+              players: room.getReadyStatus(),
+            });
+          } else {
+            send(ws, { type: 'error', message: 'Solo el host puede iniciar el ready check' });
+          }
+          break;
+        }
+
+        case 'ready': {
+          if (!ws.roomId) return;
+          const room = gameRooms.get(ws.roomId);
+          if (!room) return;
+
+          const newPhase = room.setPlayerReady(ws.userId);
+
+          // Broadcast updated ready status to everyone
+          broadcastRoom(ws.roomId, {
+            type:    'ready-status',
+            players: room.getReadyStatus(),
+          });
+
+          // If all ready → countdown just started
+          if (newPhase === 'countdown') {
+            broadcastRoom(ws.roomId, {
+              type:        'phase',
+              phase:       'countdown',
+              countdownMs: room._countdownMs,
+            });
+          }
           break;
         }
 
@@ -212,8 +273,15 @@ function setupGameRoute(app) {
       const room = gameRooms.get(roomId);
       if (!room) return;
 
+      const wasPreGame = room.phase === 'ready' || room.phase === 'countdown';
       room.setPlayerInactive(userId);
       broadcastRoom(roomId, { type: 'player-disconnected', playerId: userId });
+
+      // A disconnect during ready/countdown cancels the phase and returns to lobby
+      if (wasPreGame) {
+        room.cancelToLobby();
+        broadcastRoom(roomId, { type: 'phase', phase: 'lobby' });
+      }
 
       // Give the player 15 s to reconnect before removing them
       const timerKey = `${roomId}:${userId}`;

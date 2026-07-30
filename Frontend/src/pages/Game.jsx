@@ -29,8 +29,27 @@ export default function Game() {
   const navigate = useNavigate();
   const { roomId } = location.state || {};
   const containerRef = useRef(null);
-  const [status, setStatus] = useState('Conectando…');
-  const [playerCount, setPlayerCount] = useState(0);
+  const wsRef        = useRef(null);
+  const phaseRef     = useRef('lobby'); // mirrors `phase` state for use inside closures
+  const [status,       setStatus]       = useState('Conectando…');
+  const [playerCount,  setPlayerCount]  = useState(0);
+  const [phase,        setPhase]        = useState('lobby');
+  const [readyPlayers, setReadyPlayers] = useState([]);  // [{ id, isReady }]
+  const [countdownSec, setCountdownSec] = useState(5);
+  const [isHost,       setIsHost]       = useState(false);
+
+  // Styles reused by overlays
+  const overlayStyle = {
+    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(5,5,16,0.88)', backdropFilter: 'blur(4px)',
+  };
+  const btnStyle = {
+    padding: '10px 28px', background: '#1e3a5f', color: '#4a9eff',
+    border: '1px solid #4a9eff', borderRadius: '4px', cursor: 'pointer',
+    fontFamily: 'monospace', fontSize: '14px', letterSpacing: '1px',
+  };
+  const sendWs = (msg) => wsRef.current?.send(JSON.stringify(msg));
 
   useEffect(() => {
     if (!roomId) {
@@ -152,6 +171,7 @@ export default function Game() {
 
       // ── WebSocket ───────────────────────────────────────────────────────────
       ws = new WebSocket(`${getWsUrl()}?token=${encodeURIComponent(token)}`);
+      wsRef.current = ws;
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'join-game', roomId }));
@@ -162,14 +182,49 @@ export default function Game() {
         try { msg = JSON.parse(e.data); } catch { return; }
 
         switch (msg.type) {
-          case 'joined':
+          case 'joined': {
             selfId = msg.playerId;
-            if (mounted) setStatus('Jugando');
+            if (mounted) {
+              setIsHost(msg.isHost || false);
+              const initPhase = msg.initialState?.phase || 'lobby';
+              phaseRef.current = initPhase;
+              setPhase(initPhase);
+              setStatus(initPhase === 'playing' ? 'Jugando' : 'En sala');
+              if (msg.initialState?.players) {
+                setReadyPlayers(msg.initialState.players.map(p => ({ id: p.id, isReady: p.isReady || false })));
+              }
+            }
             worker.postMessage({ type: 'snapshot', data: msg.initialState });
             break;
-          case 'snapshot':
+          }
+          case 'snapshot': {
+            if (mounted && msg.phase === 'countdown' && msg.countdownMs !== undefined) {
+              setCountdownSec(Math.max(1, Math.ceil(msg.countdownMs / 1000)));
+            }
             worker.postMessage({ type: 'snapshot', data: msg });
             break;
+          }
+          case 'phase': {
+            if (!mounted) break;
+            const { phase: newPhase, countdownMs, players } = msg;
+            phaseRef.current = newPhase;
+            setPhase(newPhase);
+            if (newPhase === 'playing')    setStatus('Jugando');
+            else if (newPhase === 'lobby') setStatus('En sala');
+            else if (newPhase === 'countdown') {
+              setCountdownSec(Math.ceil((countdownMs || 5000) / 1000));
+            }
+            if (players) setReadyPlayers(players);
+            break;
+          }
+          case 'ready-status': {
+            if (mounted && msg.players) setReadyPlayers(msg.players);
+            break;
+          }
+          case 'player-joined': {
+            // Reflected in next snapshot's player list
+            break;
+          }
           case 'hit': {
             // Flash the hit player sprite briefly (placeholder damage feedback)
             const hitSprite = sprites.get(msg.playerId);
@@ -212,6 +267,7 @@ export default function Game() {
 
       inputInterval = setInterval(() => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (phaseRef.current !== 'playing') return; // block inputs during pre-game phases
         let dx = 0;
         let dy = 0;
         if (keys.has('ArrowLeft') || keys.has('KeyA')) dx -= 1;
@@ -246,23 +302,70 @@ export default function Game() {
 
   return (
     <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      background: '#050510',
-      gap: '12px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', minHeight: '100vh', background: '#050510', gap: '12px',
     }}>
-      <div style={{ display: 'flex', gap: '24px', fontFamily: 'monospace', fontSize: '13px', color: '#4a9eff' }}>
-        <span>{status}</span>
-        <span>{playerCount} jugador{playerCount !== 1 ? 'es' : ''}</span>
-        <span style={{ color: '#666', fontSize: '11px' }}>WASD / ↑↓←→ para mover</span>
+      <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#4a9eff' }}>
+        {phase === 'playing'
+          ? `${playerCount} jugador${playerCount !== 1 ? 'es' : ''} — WASD/flechas mover, Espacio disparar`
+          : status}
       </div>
-      <div
-        ref={containerRef}
-        style={{ border: '2px solid #1e3a5f', borderRadius: '2px' }}
-      />
+
+      <div style={{ position: 'relative' }}>
+        <div ref={containerRef} style={{ border: '2px solid #1e3a5f', borderRadius: '2px' }} />
+
+        {/* Lobby overlay */}
+        {phase === 'lobby' && (
+          <div style={overlayStyle}>
+            <h2 style={{ color: '#4a9eff', margin: '0 0 12px', fontFamily: 'monospace' }}>En espera…</h2>
+            <p style={{ color: '#aaa', margin: '0 0 24px', fontFamily: 'monospace' }}>
+              {playerCount} jugador{playerCount !== 1 ? 'es' : ''} conectado{playerCount !== 1 ? 's' : ''}
+            </p>
+            {isHost ? (
+              <button style={btnStyle} onClick={() => sendWs({ type: 'start-ready' })}>
+                Iniciar ready check
+              </button>
+            ) : (
+              <p style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
+                Esperando al host…
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Ready overlay */}
+        {phase === 'ready' && (
+          <div style={overlayStyle}>
+            <h2 style={{ color: '#4a9eff', margin: '0 0 20px', fontFamily: 'monospace' }}>¿Listos?</h2>
+            <div style={{ marginBottom: '24px' }}>
+              {readyPlayers.map(p => (
+                <div key={p.id} style={{
+                  color: p.isReady ? '#00ffcc' : '#ff4444',
+                  fontFamily: 'monospace', marginBottom: '6px', fontSize: '13px',
+                }}>
+                  {p.isReady ? '✓' : '○'} {p.id.slice(0, 10)}…
+                </div>
+              ))}
+            </div>
+            <button style={btnStyle} onClick={() => sendWs({ type: 'ready' })}>
+              ¡Listo!
+            </button>
+          </div>
+        )}
+
+        {/* Countdown overlay */}
+        {phase === 'countdown' && (
+          <div style={overlayStyle}>
+            <div style={{
+              fontSize: '120px', fontWeight: 'bold', color: '#fff',
+              fontFamily: 'monospace', lineHeight: 1,
+              textShadow: '0 0 40px #4a9eff, 0 0 80px #4a9eff',
+            }}>
+              {countdownSec}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
