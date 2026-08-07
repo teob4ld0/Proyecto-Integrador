@@ -5,6 +5,7 @@ const API_BASE = apiEnv
   : '/api';
 const ID_TOKEN_KEY = 'danma_idtoken';
 const LEGACY_TOKEN_KEY = 'danma_token';
+const USER_ID_KEY      = 'danma_userId';
 
 const HEADERS_JSON = {
   'Content-Type': 'application/json',
@@ -23,6 +24,15 @@ export function getIdToken() {
   }
 
   return '';
+}
+
+export function getStoredUserId() {
+  return localStorage.getItem(USER_ID_KEY) || '';
+}
+
+export function setStoredUserId(id) {
+  if (id) localStorage.setItem(USER_ID_KEY, id);
+  else localStorage.removeItem(USER_ID_KEY);
 }
 
 export function setIdToken(token) {
@@ -125,6 +135,7 @@ export async function resendVerificationEmail(email) {
 export function logout() {
   localStorage.removeItem(ID_TOKEN_KEY);
   localStorage.removeItem(LEGACY_TOKEN_KEY);
+  localStorage.removeItem(USER_ID_KEY);
 }
 
 // ==========================================
@@ -202,6 +213,15 @@ export async function joinRoom(roomId, password = '') {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ password })
+  });
+  return handleResponse(res);
+}
+
+export async function setCharacterColor(roomId, color) {
+  const res = await fetch(`${API_BASE}/rooms/${roomId}/character`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ color }),
   });
   return handleResponse(res);
 }
