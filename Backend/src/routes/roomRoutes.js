@@ -431,6 +431,57 @@ async function roomRoutes(fastify) {
 
     return reply.send({ success: true });
   });
+  /**
+   * POST /api/rooms/:roomId/character
+   * Set the authenticated player's character colour in the room.
+   * Body: { color: 'blue' | 'red' | 'green' | 'yellow' | 'purple' | 'orange' }
+   */
+  fastify.post('/rooms/:roomId/character', { preHandler: authenticate }, async (request, reply) => {
+    const { roomId } = request.params;
+
+    if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
+      return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const VALID_COLORS = new Set(['blue', 'red', 'green', 'yellow', 'purple', 'orange']);
+    const color = String(request.body?.color || '').toLowerCase();
+
+    if (!VALID_COLORS.has(color)) {
+      return reply.status(400).send({ message: 'Invalid color' });
+    }
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) return reply.status(404).send({ message: 'Room not found' });
+
+    let room;
+    try {
+      room = JSON.parse(raw);
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+
+    const userId = request.user.id;
+    if (!Array.isArray(room.players) || !room.players.includes(userId)) {
+      return reply.status(403).send({ message: 'Player is not part of this room' });
+    }
+
+    // Reject if another active player already has this color
+    const playerCharacters = room.playerCharacters && typeof room.playerCharacters === 'object'
+      ? room.playerCharacters : {};
+    for (const [pid, c] of Object.entries(playerCharacters)) {
+      if (pid !== userId && c === color) {
+        return reply.status(409).send({ message: `Color '${color}' is already taken` });
+      }
+    }
+
+    playerCharacters[userId] = color;
+    room.playerCharacters = playerCharacters;
+
+    await redis.set(roomKey(roomId), JSON.stringify(room), 'KEEPTTL');
+
+    return reply.send({ playerCharacters });
+  });
+
 }
 
 module.exports = roomRoutes;

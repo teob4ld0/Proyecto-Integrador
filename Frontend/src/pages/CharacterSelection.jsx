@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken } from '../services/api';
+import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setCharacterColor, getStoredUserId, setStoredUserId } from '../services/api';
 
 const CHARACTER_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'orange'];
 
@@ -51,7 +51,7 @@ function normalizePlayerCharacters(roomData, fallbackCharacters = {}) {
   const incomingCharacters = roomData?.playerCharacters && typeof roomData.playerCharacters === 'object'
     ? roomData.playerCharacters
     : {};
-  const mergedCharacters = { ...(fallbackCharacters || {}), ...incomingCharacters };
+  const mergedCharacters = { ...incomingCharacters, ...(fallbackCharacters || {}) };
   const normalizedCharacters = {};
 
   for (const playerId of players) {
@@ -98,7 +98,7 @@ export default function CharacterSelection() {
   const [roomError, setRoomError] = useState('');
   const [friendsOnly, setFriendsOnly] = useState(false);
   const [playerName, setPlayerName] = useState('PLAYER');
-  const [currentUserId, setCurrentUserId] = useState('');
+  const [currentUserId, setCurrentUserId] = useState(() => getStoredUserId());
   const [usernamesById, setUsernamesById] = useState({});
   const [activeRoomId, setActiveRoomId] = useState('');
   const [connectingPlayerIds, setConnectingPlayerIds] = useState([]);
@@ -166,13 +166,11 @@ export default function CharacterSelection() {
 
     setPlayerColorInRoom(userId, nextColor);
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'set-character-color',
-        roomId: activeRoomId,
-        color: nextColor,
-      }));
-    }
+    // Use HTTP endpoint — more reliable than WS for persistent state changes
+    setCharacterColor(activeRoomId, nextColor).catch(() => {
+      // Revert optimistic update on failure
+      setPlayerColorInRoom(userId, currentColor);
+    });
   };
 
   const leaveCurrentRoom = async (keepalive = false) => {
@@ -217,11 +215,11 @@ export default function CharacterSelection() {
 
     getCurrentUser()
       .then((user) => {
-        if (user?.username) {
-          setPlayerName(user.username);
-        }
-        if (user?.id || user?.userId) {
-          setCurrentUserId(user.id || user.userId);
+        if (user?.username) setPlayerName(user.username);
+        const id = user?.id || user?.userId;
+        if (id) {
+          setCurrentUserId(id);
+          setStoredUserId(id);
         }
       })
       .catch(() => {});
