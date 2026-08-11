@@ -1,0 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-primary: #070913;
+  --bg-surface: rgba(15, 20, 38, 0.75);
+  --bg-surface-hover: rgba(25, 33, 60, 0.85);
+  --border-glow: rgba(255, 43, 91, 0.35);
+  
+  --primary-glow: #ff2b5b;
+  --primary-accent: #ff477e;
+  --secondary-glow: #7928ca;
+  --cyan-glow: #00f2fe;
+  --gold-glow: #ffb703;
+  
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  
+  --font-display: 'Orbitron', sans-serif;
+  --font-body: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 15% 20%, rgba(121, 40, 202, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(255, 43, 91, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(0, 242, 254, 0.05) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Glassmorphism containers */
+.glass-panel {
+  background: var(--bg-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.03);
+}
+
+.glass-card {
+  background: rgba(18, 24, 46, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary-glow);
+  box-shadow: 0 10px 25px -5px rgba(255, 43, 91, 0.3);
+}
+
+/* Neon Typography */
+.title-glow {
+  font-family: var(--font-display);
+  background: linear-gradient(135deg, #ffffff 0%, var(--primary-accent) 50%, var(--secondary-glow) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 30px rgba(255, 43, 91, 0.5);
+}
+
+.subtitle-glow {
+  font-family: var(--font-display);
+  letter-spacing: 2px;
+  color: var(--cyan-glow);
+  text-shadow: 0 0 10px rgba(0, 242, 254, 0.4);
+}
+
+/* Custom Buttons */
+.btn-primary {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, var(--primary-glow), var(--secondary-glow));
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(255, 43, 91, 0.4);
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 30px rgba(255, 43, 91, 0.6);
+}
+
+.btn-secondary {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 1px;
+  padding: 12px 28px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--cyan-glow);
+  color: white;
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+}
+
+/* Inputs */
+.input-glass {
+  background: rgba(10, 14, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.input-glass:focus {
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 12px rgba(255, 43, 91, 0.4);
+}
