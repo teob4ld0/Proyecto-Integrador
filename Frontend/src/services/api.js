@@ -217,11 +217,11 @@ export async function joinRoom(roomId, password = '') {
   return handleResponse(res);
 }
 
-export async function setCharacterColor(roomId, color) {
+export async function setCharacterColor(roomId, role) {
   const res = await fetch(`${API_BASE}/rooms/${roomId}/character`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ color }),
+    body: JSON.stringify({ role }),
   });
   return handleResponse(res);
 }
