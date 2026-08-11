@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
 import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setCharacterColor, getStoredUserId, setStoredUserId } from '../services/api';
 
-const CHARACTER_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'orange'];
+const CHARACTER_ROLE = ['Tank', 'Support', 'DPS', 'Special_Attack'];
 
 const DIFFICULTY_META = {
   normal: { label: 'NORMAL', className: 'normal' },
@@ -17,9 +17,9 @@ function normalizeDifficulty(value) {
   return 'normal';
 }
 
-function getRandomColor(exclude = '') {
-  const filtered = CHARACTER_COLORS.filter((color) => color !== exclude);
-  const pool = filtered.length > 0 ? filtered : CHARACTER_COLORS;
+function getRandomRole(exclude = '') {
+  const filtered = CHARACTER_ROLE.filter((role) => role !== exclude);
+  const pool = filtered.length > 0 ? filtered : CHARACTER_ROLE;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -55,7 +55,7 @@ function normalizePlayerCharacters(roomData, fallbackCharacters = {}) {
   const normalizedCharacters = {};
 
   for (const playerId of players) {
-    normalizedCharacters[playerId] = mergedCharacters[playerId] || getRandomColor();
+    normalizedCharacters[playerId] = mergedCharacters[playerId] || getRandomRole();
   }
 
   return normalizedCharacters;
@@ -137,12 +137,12 @@ export default function CharacterSelection() {
   };
 
   const getPlayerColor = (userId) => {
-    if (!userId) return 'blue';
+    if (!userId) return 'Tank';
     const roomCharacters = room?.playerCharacters;
     if (roomCharacters && typeof roomCharacters === 'object') {
-      return roomCharacters[userId] || 'blue';
+      return roomCharacters[userId] || 'Tank';
     }
-    return 'blue';
+    return 'Tank';
   };
 
   const setPlayerColorInRoom = (userId, color) => {
@@ -162,7 +162,7 @@ export default function CharacterSelection() {
   const handleToggleCharacterForPlayer = (userId) => {
     if (!userId || userId !== currentUserId || !activeRoomId) return;
     const currentColor = getPlayerColor(userId);
-    const nextColor = getRandomColor(currentColor);
+    const nextColor = getRandomRole(currentColor);
 
     setPlayerColorInRoom(userId, nextColor);
 

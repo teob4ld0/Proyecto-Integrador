@@ -3,12 +3,12 @@
 const redis = require('../config/redis');
 
 const PLAYER_ROOM_KEY = (userId) => `player:${userId}:room`;
-const CHARACTER_COLORS = ['blue', 'red', 'green', 'yellow', 'purple', 'orange'];
+const CHARACTER_ROLES = ['Tank', 'Support', 'DPS', 'Special_Attack'];
 
-function getRandomCharacterColor(excludeColor = '') {
-  const normalizedExclude = String(excludeColor || '').toLowerCase();
-  const available = CHARACTER_COLORS.filter((color) => color !== normalizedExclude);
-  const pool = available.length > 0 ? available : CHARACTER_COLORS;
+function getRandomCharacterRole(excludeRole = '') {
+  const normalizedExclude = String(excludeRole || '');
+  const available = CHARACTER_ROLES.filter((role) => role !== normalizedExclude);
+  const pool = available.length > 0 ? available : CHARACTER_ROLES;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -21,7 +21,7 @@ function syncPlayerCharacters(room) {
 
   for (const playerId of validPlayers) {
     if (!room.playerCharacters[playerId]) {
-      room.playerCharacters[playerId] = getRandomCharacterColor();
+      room.playerCharacters[playerId] = getRandomCharacterRole();
     }
   }
 
@@ -108,6 +108,6 @@ module.exports = {
   addPlayer,
   removePlayer,
   getPlayerRoom,
-  CHARACTER_COLORS,
-  getRandomCharacterColor,
+  CHARACTER_ROLES,
+  getRandomCharacterRole,
 };

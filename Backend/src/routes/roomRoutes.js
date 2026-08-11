@@ -2,7 +2,7 @@ const { randomUUID } = require('crypto');
 const { z } = require('zod');
 const redis = require('../config/redis');
 const authenticate = require('../middleware/auth');
-const { addPlayer, removePlayer, getRandomCharacterColor } = require('../utils/roomUtils');
+const { addPlayer, removePlayer, getRandomCharacterRole } = require('../utils/roomUtils');
 
 const ROOM_TTL = 7200; // seconds
 const PUBLIC_ROOMS_KEY = 'rooms:public';
@@ -43,7 +43,7 @@ function sanitiseRoom(data) {
     : {};
   const playerCharacters = {};
   for (const playerId of players) {
-    playerCharacters[playerId] = rawCharacters[playerId] || getRandomCharacterColor();
+    playerCharacters[playerId] = rawCharacters[playerId] || getRandomCharacterRole();
   }
 
   return {
@@ -99,7 +99,7 @@ async function roomRoutes(fastify) {
       map,
       maxPlayers,
       players: [hostId],
-      playerCharacters: { [hostId]: getRandomCharacterColor() },
+      playerCharacters: { [hostId]: getRandomCharacterRole() },
       hasPassword,
       isPublic,
       createdAt,
@@ -433,8 +433,8 @@ async function roomRoutes(fastify) {
   });
   /**
    * POST /api/rooms/:roomId/character
-   * Set the authenticated player's character colour in the room.
-   * Body: { color: 'blue' | 'red' | 'green' | 'yellow' | 'purple' | 'orange' }
+   * Set the authenticated player's character role in the room.
+   * Body: { role: 'Tank' | 'Support' | 'DPS' | 'Special_Attack' }
    */
   fastify.post('/rooms/:roomId/character', { preHandler: authenticate }, async (request, reply) => {
     const { roomId } = request.params;
@@ -443,11 +443,11 @@ async function roomRoutes(fastify) {
       return reply.status(400).send({ message: 'Invalid roomId' });
     }
 
-    const VALID_COLORS = new Set(['blue', 'red', 'green', 'yellow', 'purple', 'orange']);
-    const color = String(request.body?.color || '').toLowerCase();
+    const VALID_ROLES = new Set(['Tank', 'Support', 'DPS', 'Special_Attack']);
+    const role = String(request.body?.role || '');
 
-    if (!VALID_COLORS.has(color)) {
-      return reply.status(400).send({ message: 'Invalid color' });
+    if (!VALID_ROLES.has(role)) {
+      return reply.status(400).send({ message: 'Invalid role' });
     }
 
     const raw = await redis.get(roomKey(roomId));
@@ -465,16 +465,16 @@ async function roomRoutes(fastify) {
       return reply.status(403).send({ message: 'Player is not part of this room' });
     }
 
-    // Reject if another active player already has this color
+    // Reject if another active player already has this role
     const playerCharacters = room.playerCharacters && typeof room.playerCharacters === 'object'
       ? room.playerCharacters : {};
-    for (const [pid, c] of Object.entries(playerCharacters)) {
-      if (pid !== userId && c === color) {
-        return reply.status(409).send({ message: `Color '${color}' is already taken` });
+    for (const [pid, r] of Object.entries(playerCharacters)) {
+      if (pid !== userId && r === role) {
+        return reply.status(409).send({ message: `Role '${role}' is already taken` });
       }
     }
 
-    playerCharacters[userId] = color;
+    playerCharacters[userId] = role;
     room.playerCharacters = playerCharacters;
 
     await redis.set(roomKey(roomId), JSON.stringify(room), 'KEEPTTL');

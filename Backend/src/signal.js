@@ -28,13 +28,13 @@ const lucia = require('./config/auth');
 const {
   addPlayer,
   removePlayer,
-  CHARACTER_COLORS,
-  getRandomCharacterColor,
+  CHARACTER_ROLES,
+  getRandomCharacterRole,
 } = require('./utils/roomUtils');
 
 const WS_PORT = parseInt(process.env.WS_PORT || '9001', 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const ALLOWED_CHARACTER_COLORS = new Set(CHARACTER_COLORS);
+const ALLOWED_CHARACTER_ROLES = new Set(CHARACTER_ROLES);
 
 // roomId → Set<WebSocket>
 const rooms = new Map();
@@ -309,19 +309,19 @@ app.ws('/signal', {
           room.playerCharacters = {};
         }
 
-        const currentColor = room.playerCharacters[ws.userId] || '';
-        const normalizedColor = String(color || '').toLowerCase();
-        const nextColor = ALLOWED_CHARACTER_COLORS.has(normalizedColor)
-          ? normalizedColor
-          : getRandomCharacterColor(currentColor);
+        const currentRole    = room.playerCharacters[ws.userId] || '';
+        const normalizedRole  = String(color || '');
+        const nextRole = ALLOWED_CHARACTER_ROLES.has(normalizedRole)
+          ? normalizedRole
+          : getRandomCharacterRole(currentRole);
 
-        room.playerCharacters[ws.userId] = nextColor;
+        room.playerCharacters[ws.userId] = nextRole;
         await redis.set(`room:${roomId}`, JSON.stringify(room), 'KEEPTTL');
 
         broadcast(roomId, {
           type: 'room-character-updated',
           userId: ws.userId,
-          color: nextColor,
+          color: nextRole,
           playerCharacters: room.playerCharacters,
         });
         break;
