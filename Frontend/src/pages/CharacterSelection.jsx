@@ -443,8 +443,22 @@ export default function CharacterSelection() {
           }
         }, 2000);
       } catch (err) {
+        console.warn('Backend unavailable, running Demo Room for UI testing:', err);
         if (!cancelled) {
-          setRoomError(err.message || 'Could not initialize room');
+          const demoRoom = {
+            id: 'demo-room-01',
+            name: 'NO MERCY LOBBY',
+            difficulty: 'normal',
+            hostId: 'demo-host',
+            players: ['demo-host', 'player-2'],
+            playerCharacters: { 'demo-host': 'Tank', 'player-2': 'DPS' },
+            isPublic: true,
+          };
+          setRoom(demoRoom);
+          setActiveRoomId(demoRoom.id);
+          setLobbyCode('DEMO01');
+          setCurrentUserId('demo-host');
+          setPlayerName('PLAYER 1');
         }
       }
     };

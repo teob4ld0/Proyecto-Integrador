@@ -278,7 +278,7 @@ function setupGameRoute(app) {
           // Clamp movement values to prevent cheating
           const dx = typeof msg.dx === 'number' ? Math.max(-1, Math.min(1, msg.dx)) : 0;
           const dy = typeof msg.dy === 'number' ? Math.max(-1, Math.min(1, msg.dy)) : 0;
-          const action = msg.action === 'shoot' ? 'shoot' : null;
+          const action = typeof msg.action === 'string' ? msg.action : null;
 
           room.setInput(ws.userId, { dx, dy, action });
           break;

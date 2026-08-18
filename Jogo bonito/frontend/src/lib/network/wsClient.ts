@@ -2,24 +2,81 @@ export interface ServerPlayer {
   id: string;
   x: number;
   y: number;
-  angle: number;
+  angle?: number;
+  isReady?: boolean;
+  character?: string | null;
   characterColor?: string;
+  hp?: number;
+  maxHp?: number;
+  sp?: number;
+  maxSp?: number;
+  defensePercent?: number;
+  focus?: boolean;
 }
 
 export interface ServerBullet {
+  id: string | number;
   x: number;
   y: number;
-  vx: number;
-  vy: number;
   radius: number;
+  ownerId?: string;
+  type?: 'normal' | 'laser';
+  vx?: number;
+  vy?: number;
   color?: string | number;
+}
+
+export interface ServerLaser {
+  id: string;
+  ownerId?: string;
+  direction?: 'left' | 'right';
+  sourceX: number;
+  sourceY: number;
+  targetY: number;
+  state: 'charging' | 'firing' | 'fading';
+  timer: number;
+  chargeDuration: number;
+  fireDuration: number;
+  fadeDuration: number;
+  maxWidth: number;
+  color: number;
+}
+
+export interface ServerBoss {
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  spellcard?: string;
+}
+
+export interface ServerBeamStruggle {
+  active: boolean;
+  isAligning?: boolean;
+  winner?: 'player' | 'boss' | null;
+  timer: number;
+  maxTimer: number;
+  balance: number;
+  resolutionTimer?: number;
+  clashX: number;
+  clashY: number;
+  playerTipX?: number;
+  bossTipX?: number;
+  vortexX?: number;
+  vortexY?: number;
 }
 
 export interface GameSnapshot {
   type: 'snapshot';
   tick: number;
+  timestamp?: number;
+  phase?: string;
+  countdownMs?: number;
   players: ServerPlayer[];
   bullets: ServerBullet[];
+  lasers?: ServerLaser[];
+  boss?: ServerBoss;
+  struggle?: ServerBeamStruggle;
 }
 
 export type GameServerMessage =
@@ -103,7 +160,7 @@ export class GameWSClient {
           type: 'input',
           dx: clampedDx,
           dy: clampedDy,
-          action: action === null ? null : undefined,
+          action: action ?? null,
         })
       );
     }

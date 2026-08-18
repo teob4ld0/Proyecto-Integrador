@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { loginUser, resendVerificationEmail, setIdToken } from '../services/api'
 import BulletBackground from '../components/BulletBackground'
@@ -10,6 +10,31 @@ export default function Login() {
   const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
   const [resending, setResending] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
+
+  useEffect(() => {
+    const handleViewportChange = () => {
+      if (!window.visualViewport) return
+      // Si el viewport vuelve a tener >= 80% de la altura de la ventana, el teclado se cerró
+      const isKeyboardClosed = window.visualViewport.height >= window.innerHeight * 0.8
+      if (isKeyboardClosed) {
+        setIsTyping(false)
+        if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+          document.activeElement.blur()
+        }
+      }
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportChange)
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportChange)
+      }
+    }
+  }, [])
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -55,48 +80,70 @@ export default function Login() {
     }
   }
 
+  const handleInputFocus = (e) => {
+    setIsTyping(true)
+    const target = e.target
+    setTimeout(() => {
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
+    }, 350)
+  }
+
+  const handleInputBlur = () => {
+    setTimeout(() => {
+      if (!document.activeElement || (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'BUTTON')) {
+        setIsTyping(false)
+      }
+    }, 150)
+  }
+
   return (
-    <div className="page-container">
+    <div className={`page-container ${isTyping ? 'is-typing' : ''}`}>
       <BulletBackground />
       
-      {/* Reutilizamos exactamente la misma cabecera del menú con sus estilos nuevos */}
-      <div className="menu-header" style={{ marginBottom: '2rem' }}>
+      {/* Cabecera unificada */}
+      <div className="menu-header">
         <h1 className="menu-title">DANMAKREW</h1>
         <h2 className="menu-subtitle">NOMERCYGAMES</h2>
       </div>
 
-      <div className="auth-card">
+      <div className={`auth-card ${isTyping ? 'is-typing' : ''}`}>
         <h2>Log In</h2>
 
         {error && <div className="message error">{error}</div>}
         {info && <div className="message success">{info}</div>}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              placeholder="player@danma.gg"
-              value={form.email}
-              onChange={handleChange}
-              required
-            />
-          </div>
+          <div className="auth-form-grid">
+            <div className="form-group">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="player@danma.gg"
+                value={form.email}
+                onChange={handleChange}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                required
+              />
+            </div>
 
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              placeholder="Your password"
-              value={form.password}
-              onChange={handleChange}
-              required
-              minLength={6}
-            />
+            <div className="form-group">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                placeholder="Your password"
+                value={form.password}
+                onChange={handleChange}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                required
+                minLength={6}
+              />
+            </div>
           </div>
 
           {/* Cambiamos a una clase dedicada para estilizar el botón según el nuevo formato */}

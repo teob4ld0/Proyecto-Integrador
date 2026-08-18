@@ -4,20 +4,15 @@
 </script>
 
 <div class="app-container">
-  <main>
-    {@render children()}
-  </main>
+  {@render children()}
 </div>
 
 <style>
   .app-container {
-    min-height: 100vh;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
-    flex-direction: column;
-  }
-  main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+    overflow: hidden;
   }
 </style>

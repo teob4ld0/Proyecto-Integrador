@@ -14,7 +14,8 @@ export default defineConfig({
 			qs: qsEntry
 		}
 	},
-	optimizeDeps: {
-		disabled: true
+	server: {
+		host: '0.0.0.0',
+		port: 5173
 	}
 });
