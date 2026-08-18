@@ -47,7 +47,7 @@ class Bullet {
   }
 }
 
-// ── Object pool ───────────────────────────────────────────────────────────────
+// ── Object pool ───
 
 const POOL_SIZE = 600;
 const _pool     = Array.from({ length: POOL_SIZE }, () => new Bullet());
