@@ -1,4 +1,4 @@
-import type { GameSnapshot } from '../network/wsClient';
+import type { GameSnapshot, ServerPlayer } from '../network/wsClient';
 
 let snapshotBuffer: GameSnapshot[] = [];
 const RENDER_DELAY_MS = 60; // 60ms buffer para suavizado fluido contra jitter
@@ -20,11 +20,14 @@ self.onmessage = (e: MessageEvent) => {
   }
 };
 
+function getSnapshotTime(s: GameSnapshot): number {
+  return s.timestamp ?? (s.tick * (1000 / 60));
+}
+
 function getInterpolatedState(renderTime: number): GameSnapshot | null {
   if (snapshotBuffer.length === 0) return null;
 
-  // Si solo hay un snapshot o el tiempo es muy antiguo, retornar el último
-  if (snapshotBuffer.length === 1 || renderTime < snapshotBuffer[0].timestamp) {
+  if (snapshotBuffer.length === 1 || renderTime < getSnapshotTime(snapshotBuffer[0])) {
     return snapshotBuffer[snapshotBuffer.length - 1];
   }
 
@@ -32,9 +35,11 @@ function getInterpolatedState(renderTime: number): GameSnapshot | null {
   for (let i = 0; i < snapshotBuffer.length - 1; i++) {
     const s0 = snapshotBuffer[i];
     const s1 = snapshotBuffer[i + 1];
+    const t0 = getSnapshotTime(s0);
+    const t1 = getSnapshotTime(s1);
 
-    if (renderTime >= s0.timestamp && renderTime <= s1.timestamp) {
-      const alpha = (renderTime - s0.timestamp) / (s1.timestamp - s0.timestamp);
+    if (renderTime >= t0 && renderTime <= t1) {
+      const alpha = t1 === t0 ? 0 : (renderTime - t0) / (t1 - t0);
       return interpolateSnapshots(s0, s1, alpha);
     }
   }
@@ -43,30 +48,38 @@ function getInterpolatedState(renderTime: number): GameSnapshot | null {
 }
 
 function interpolateSnapshots(s0: GameSnapshot, s1: GameSnapshot, alpha: number): GameSnapshot {
-  const interpolatedPlayers: Record<string, { x: number; y: number; hp: number; focus: boolean }> = {};
-
-  for (const id in s1.players) {
-    const p1 = s1.players[id];
-    const p0 = s0.players[id] || p1;
-
-    interpolatedPlayers[id] = {
+  const p0Map = new Map((s0.players || []).map((p) => [p.id, p]));
+  const interpolatedPlayers: ServerPlayer[] = (s1.players || []).map((p1) => {
+    const p0 = p0Map.get(p1.id) || p1;
+    return {
+      ...p1,
       x: p0.x + (p1.x - p0.x) * alpha,
       y: p0.y + (p1.y - p0.y) * alpha,
-      hp: p1.hp,
-      focus: p1.focus
+    };
+  });
+
+  const t0 = getSnapshotTime(s0);
+  const t1 = getSnapshotTime(s1);
+
+  let interpolatedBoss = s1.boss;
+  if (s0.boss && s1.boss) {
+    interpolatedBoss = {
+      ...s1.boss,
+      x: s0.boss.x + (s1.boss.x - s0.boss.x) * alpha,
+      y: s0.boss.y + (s1.boss.y - s0.boss.y) * alpha,
     };
   }
 
   return {
-    timestamp: s0.timestamp + (s1.timestamp - s0.timestamp) * alpha,
+    type: 'snapshot',
+    tick: s1.tick,
+    timestamp: t0 + (t1 - t0) * alpha,
+    phase: s1.phase,
+    countdownMs: s1.countdownMs,
     players: interpolatedPlayers,
-    boss: {
-      x: s0.boss.x + (s1.boss.x - s0.boss.x) * alpha,
-      y: s0.boss.y + (s1.boss.y - s0.boss.y) * alpha,
-      hp: s1.boss.hp,
-      maxHp: s1.boss.maxHp,
-      spellcard: s1.boss.spellcard
-    },
-    bullets: s1.bullets
+    bullets: s1.bullets,
+    lasers: s1.lasers,
+    boss: interpolatedBoss,
+    struggle: s1.struggle,
   };
 }

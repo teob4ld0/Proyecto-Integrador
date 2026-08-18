@@ -4,6 +4,17 @@ import BulletBackground from '../components/BulletBackground';
 export default function Home() {
   const navigate = useNavigate();
 
+  const handleGTFO = () => {
+    try {
+      window.close();
+    } catch {
+      // ignore
+    }
+    setTimeout(() => {
+      window.location.href = 'about:blank';
+    }, 100);
+  };
+
   return (
     <div className="menu-page-container">
       {/* Fondo animado */}
@@ -39,7 +50,7 @@ export default function Home() {
         <div className="menu-row">
           <button 
             className="menu-btn" 
-            onClick={() => console.log('Backend: Conectar acción de salir/cerrar juego')}
+            onClick={handleGTFO}
           >
             GTFO ;]
           </button>

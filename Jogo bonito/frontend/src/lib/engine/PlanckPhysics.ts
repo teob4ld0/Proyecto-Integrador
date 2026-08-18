@@ -1,26 +1,31 @@
-import planck from 'planck';
+import * as planck from 'planck';
+
+const PWorld = (planck as any).World || (planck as any).default?.World || planck;
+const PVec2 = (planck as any).Vec2 || (planck as any).default?.Vec2;
+const PCircle = (planck as any).Circle || (planck as any).default?.Circle;
 
 export class PlayerPhysicsEngine {
-  private world: planck.World;
-  private playerBody: planck.Body;
-  private normalSpeed = 350; // px/sec
-  private focusSpeed = 140;  // px/sec (Shift para precisión)
+  private world: any;
+  private playerBody: any;
+  private normalSpeed = 580; // px/sec (Respuesta rápida y ágil)
+  private focusSpeed = 190;  // px/sec (3x más lento para esquiva milimétrica precisa)
 
-  constructor(initialX: number = 400, initialY: number = 700) {
-    // Gravedad 0 para vista Top-Down Danmaku
-    this.world = new planck.World(planck.Vec2(0, 0));
+  constructor(initialX: number = 100, initialY: number = 300) {
+    // Gravedad 0 para vista Top-Down / Horizontal Danmaku
+    this.world = new PWorld(PVec2(0, 0));
 
-    // Crear cuerpo dinámico para el jugador
+    // Crear cuerpo dinámico sin amortiguación para respuesta instantánea
     this.playerBody = this.world.createBody({
       type: 'dynamic',
-      position: planck.Vec2(initialX, initialY),
+      position: PVec2(initialX, initialY),
       fixedRotation: true,
-      linearDamping: 10.0
+      linearDamping: 0.0,
+      bullet: true
     });
 
     // Hitbox del jugador estilo Touhou (círculo pequeño de 4px)
     this.playerBody.createFixture({
-      shape: planck.Circle(4),
+      shape: PCircle(4),
       density: 1.0,
       friction: 0.0
     });
@@ -38,17 +43,17 @@ export class PlayerPhysicsEngine {
       vy *= invLen;
     }
 
-    this.playerBody.setLinearVelocity(planck.Vec2(vx * speed, vy * speed));
-    this.world.step(dt);
+    const currentPos = this.playerBody.getPosition();
+    const newX = currentPos.x + vx * speed * dt;
+    const newY = currentPos.y + vy * speed * dt;
 
-    // Clampear jugador dentro de los límites del canvas (0 a 800 ancho, 0 a 900 alto)
-    const pos = this.playerBody.getPosition();
-    const clampedX = Math.max(20, Math.min(780, pos.x));
-    const clampedY = Math.max(30, Math.min(870, pos.y));
-    
-    if (clampedX !== pos.x || clampedY !== pos.y) {
-      this.playerBody.setPosition(planck.Vec2(clampedX, clampedY));
-    }
+    // Clampear jugador dentro de los límites del canvas horizontal (1024x576)
+    const clampedX = Math.max(20, Math.min(1004, newX));
+    const clampedY = Math.max(20, Math.min(556, newY));
+
+    this.playerBody.setPosition(PVec2(clampedX, clampedY));
+    this.playerBody.setLinearVelocity(PVec2(vx * speed, vy * speed));
+    this.world.step(dt);
   }
 
   getPosition(): { x: number; y: number } {
@@ -57,6 +62,7 @@ export class PlayerPhysicsEngine {
   }
 
   setPosition(x: number, y: number) {
-    this.playerBody.setPosition(planck.Vec2(x, y));
+    this.playerBody.setPosition(PVec2(x, y));
   }
 }
+

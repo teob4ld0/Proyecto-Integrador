@@ -1,9 +1,12 @@
 'use strict';
 
-// Placeholder – bullet system will be implemented in a future issue.
-// eslint-disable-next-line no-unused-vars
-function updateBullets(world, deltaTime) {
-  // noop – bullets are not yet implemented
-}
+const { BulletSystem, BULLET_RADIUS, BULLET_SPEED } = require('./systems/BulletSystem');
+const { acquireBullet, releaseBullet } = require('./entities/Bullet');
 
-module.exports = { updateBullets };
+module.exports = {
+  BulletSystem,
+  BULLET_RADIUS,
+  BULLET_SPEED,
+  acquireBullet,
+  releaseBullet,
+};

@@ -21,12 +21,22 @@ class BulletSystem {
 
   /**
    * Spawn a new bullet from (x, y) in direction `angle` (radians).
-   * Called by GameRoom when a player shoots.
+   * Called by GameRoom when a player or boss shoots.
    */
-  spawn(ownerId, x, y, angle) {
-    const vx     = Math.cos(angle) * BULLET_SPEED;
-    const vy     = Math.sin(angle) * BULLET_SPEED;
-    const bullet = acquireBullet(ownerId, x, y, vx, vy, BULLET_RADIUS, BULLET_TTL);
+  spawn(ownerId, x, y, angle, speed = BULLET_SPEED, radius = BULLET_RADIUS, ttl = BULLET_TTL, type = 'normal', damage = 5) {
+    const vx     = Math.cos(angle) * speed;
+    const vy     = Math.sin(angle) * speed;
+    const bullet = acquireBullet(ownerId, x, y, vx, vy, radius, ttl, type, damage);
+    this.active.push(bullet);
+    this.hash.insert(bullet);
+    return bullet;
+  }
+
+  /**
+   * Spawn a bullet directly with velocity components vx, vy.
+   */
+  spawnBullet(ownerId, x, y, vx, vy, radius = BULLET_RADIUS, ttl = BULLET_TTL, type = 'normal', damage = 5) {
+    const bullet = acquireBullet(ownerId, x, y, vx, vy, radius, ttl, type, damage);
     this.active.push(bullet);
     this.hash.insert(bullet);
     return bullet;
@@ -39,7 +49,7 @@ class BulletSystem {
    *   1. Move every bullet and re-register it in the spatial hash.
    *      Remove bullets that expired or left the field.
    *   2. For each active player, query nearby bullets via the spatial hash
-   *      and perform circle-circle collision checks.
+   *      and perform circle-circle collision checks (boss bullets vs players).
    *   3. Remove bullets that hit a player.
    *
    * @param {number} deltaTime  — fixed tick delta (1/60 s)
@@ -77,14 +87,16 @@ class BulletSystem {
 
       const candidates = this.hash.query(pos.x, pos.y, MAX_QUERY_R);
       for (const b of candidates) {
-        if (toKill.has(b))          continue; // already hit something this tick
+        if (toKill.has(b)) continue; // already hit something this tick
         if (b.ownerId === playerId) continue; // no self-hit
+        // In PvE, only boss bullets damage players
+        if (b.ownerId !== 'boss') continue;
 
         const dx = b.x - pos.x;
         const dy = b.y - pos.y;
         const minDist = PLAYER_RADIUS + b.radius;
         if (dx * dx + dy * dy <= minDist * minDist) {
-          hits.push({ playerId, bulletId: b.id, ownerId: b.ownerId });
+          hits.push({ playerId, bulletId: b.id, ownerId: b.ownerId, damage: b.damage || 5 });
           toKill.add(b);
         }
       }
@@ -103,14 +115,16 @@ class BulletSystem {
 
   /**
    * Serialise active bullets for the snapshot.
-   * Only sends id, position and radius — the client interpolates between snapshots.
+   * Sends id, position, radius, ownerId and type.
    */
   getState() {
     return this.active.map((b) => ({
-      id:     b.id,
-      x:      b.x,
-      y:      b.y,
-      radius: b.radius,
+      id:      b.id,
+      x:       b.x,
+      y:       b.y,
+      radius:  b.radius,
+      ownerId: b.ownerId,
+      type:    b.type || 'normal',
     }));
   }
 }
