@@ -4,7 +4,6 @@ import type { BulletSystem } from '../systems/BulletSystem';
 import type { WallSystem } from '../systems/WallSystem';
 import type { LaserSystem } from '../systems/LaserSystem';
 import type { ParticleSystem } from '../systems/ParticleSystem';
-import { PlayerPhysicsEngine } from '../PlanckPhysics';
 import { getCharacterStats, type CharacterCombatStats } from '../CharacterStats';
 
 export class Player {
@@ -15,7 +14,6 @@ export class Player {
   public stats: CharacterCombatStats;
   public hp: number;
   public sp: number;
-  private physics: PlayerPhysicsEngine;
 
   public container = new PIXI.Container();
   private sprite: PIXI.Sprite | PIXI.Graphics = new PIXI.Graphics();
@@ -29,7 +27,6 @@ export class Player {
     this.stats = getCharacterStats(initialClass);
     this.hp = this.stats.hpMax;
     this.sp = 0;
-    this.physics = new PlayerPhysicsEngine(this.pos.x, this.pos.y);
     this.initGraphics();
     parentContainer.addChild(this.container);
     this.setCharacterClass(initialClass);
@@ -71,8 +68,8 @@ export class Player {
     return true;
   }
 
-  public applyIncomingDamage(rawDamage: number): number {
-    const mitigation = Math.max(0, Math.min(1, this.defensePercent / 100));
+  public applyIncomingDamage(rawDamage: number, ignoreDefense: boolean = false): number {
+    const mitigation = ignoreDefense ? 0 : Math.max(0, Math.min(1, this.defensePercent / 100));
     const finalDamage = rawDamage * (1 - mitigation);
     this.hp = Math.max(0, this.hp - finalDamage);
     return finalDamage;
@@ -108,7 +105,6 @@ export class Player {
     this.pos.y = y;
     this.targetPos.x = x;
     this.targetPos.y = y;
-    this.physics.setPosition(x, y);
     this.container.position.set(x, y);
   }
 
@@ -156,40 +152,19 @@ export class Player {
     animTimer: number,
     keys: Record<string, boolean>,
     moveVec?: { dx: number; dy: number },
-    isBackendControlled: boolean = false
+    isBackendControlled: boolean = true
   ): { dx: number; dy: number } {
     this.shootTimer += dt;
     this.skillCooldownTimer = Math.max(0, this.skillCooldownTimer - dt);
 
-    let dx = 0;
-    let dy = 0;
+    const prevX = this.pos.x;
+    const prevY = this.pos.y;
+    this.pos.x += (this.targetPos.x - this.pos.x) * 0.75;
+    this.pos.y += (this.targetPos.y - this.pos.y) * 0.75;
+    const dx = Math.sign(this.pos.x - prevX);
+    const dy = Math.sign(this.pos.y - prevY);
 
-    if (isBackendControlled) {
-      const prevX = this.pos.x;
-      const prevY = this.pos.y;
-      this.pos.x += (this.targetPos.x - this.pos.x) * 0.3;
-      this.pos.y += (this.targetPos.y - this.pos.y) * 0.3;
-      this.physics.setPosition(this.pos.x, this.pos.y);
-      dx = Math.sign(this.pos.x - prevX);
-      dy = Math.sign(this.pos.y - prevY);
-    } else {
-      if (moveVec && (moveVec.dx !== 0 || moveVec.dy !== 0)) {
-        dx = moveVec.dx;
-        dy = moveVec.dy;
-      } else {
-        if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
-        if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
-        if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
-        if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
-      }
-
-      this.isFocus = !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['Shift'] || keys['focus'] || (keys as any).isFocus);
-      this.physics.updateInput(dx, dy, this.isFocus, dt);
-      const physPos = this.physics.getPosition();
-      this.pos.x = physPos.x;
-      this.pos.y = physPos.y;
-    }
-
+    this.isFocus = !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['Shift'] || keys['focus'] || (keys as any).isFocus);
     this.container.position.set(this.pos.x, this.pos.y);
     this.hitbox.visible = this.isFocus;
     if (this.isFocus) this.hitbox.rotation += 0.08;

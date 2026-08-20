@@ -47,7 +47,47 @@ export interface ServerBoss {
   y: number;
   hp: number;
   maxHp: number;
+  phase?: number;
+  remainingStocks?: number;
+  spellcardName?: string;
   spellcard?: string;
+  isSpellCard?: boolean;
+  isActive?: boolean;
+  isDefeated?: boolean;
+  isRefilling?: boolean;
+  isLockedForBeam?: boolean;
+}
+
+export interface ServerEnemy {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  radius: number;
+}
+
+export interface ServerItem {
+  id: string;
+  x: number;
+  y: number;
+  type: 'power' | 'point' | 'bomb_frag' | 'life_frag' | string;
+}
+
+export interface ServerCampaign {
+  difficulty: string;
+  difficultyLabel: string;
+  world: number;
+  stage: number;
+  stageState: string;
+  campaignComplete: boolean;
+  bannerText: string;
+  bannerSubtext: string;
+  clearTitle: string;
+  clearSubtext: string;
+  worldName?: string;
+  stageTitle?: string;
 }
 
 export interface ServerBeamStruggle {
@@ -72,10 +112,15 @@ export interface GameSnapshot {
   timestamp?: number;
   phase?: string;
   countdownMs?: number;
+  stageTime?: number;
   players: ServerPlayer[];
   bullets: ServerBullet[];
   lasers?: ServerLaser[];
+  walls?: any[];
+  enemies?: ServerEnemy[];
+  items?: ServerItem[];
   boss?: ServerBoss;
+  campaign?: ServerCampaign;
   struggle?: ServerBeamStruggle;
 }
 
@@ -91,6 +136,8 @@ export class GameWSClient {
   private onSnapshotCallback: ((snapshot: GameSnapshot) => void) | null = null;
   private onJoinedCallback: ((playerId: string, initialState: GameSnapshot) => void) | null = null;
   private myPlayerId: string = '';
+  private inputSequence = 0;
+  private connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private token: string, private defaultPort: number = 9001) {}
 
@@ -103,6 +150,31 @@ export class GameWSClient {
     this.onSnapshotCallback = onSnapshot;
 
     return new Promise((resolve, reject) => {
+      if (!roomId) {
+        reject(new Error('roomId invalido para iniciar la partida'));
+        return;
+      }
+
+      let settled = false;
+      const failConnect = (reason: unknown) => {
+        if (settled) return;
+        settled = true;
+        if (this.connectTimeoutId) {
+          clearTimeout(this.connectTimeoutId);
+          this.connectTimeoutId = null;
+        }
+        reject(reason instanceof Error ? reason : new Error(String(reason ?? 'Error de conexion')));
+      };
+      const finishConnect = () => {
+        if (settled) return;
+        settled = true;
+        if (this.connectTimeoutId) {
+          clearTimeout(this.connectTimeoutId);
+          this.connectTimeoutId = null;
+        }
+        resolve();
+      };
+
       let url = '';
       if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_WS_URL) {
         url = `${import.meta.env.VITE_WS_URL}/game?token=${encodeURIComponent(this.token)}`;
@@ -115,20 +187,26 @@ export class GameWSClient {
       }
 
       this.socket = new WebSocket(url);
+      this.connectTimeoutId = setTimeout(() => {
+        failConnect(new Error('Timeout esperando confirmacion del servidor de juego'));
+      }, 8000);
 
       this.socket.onopen = () => {
         console.log('[GameWS] Conectado al servidor de juego en:', url);
+        this.inputSequence = 0;
         this.send({ type: 'join-game', roomId });
-        resolve();
       };
 
       this.socket.onerror = (err) => {
         console.error('[GameWS] Error de conexión:', err);
-        reject(err);
+        failConnect(new Error('No se pudo abrir el WebSocket del juego'));
       };
 
       this.socket.onclose = () => {
         console.log('[GameWS] Conexión de juego cerrada');
+        if (!settled) {
+          failConnect(new Error('Conexion cerrada antes de completar el join de la sala'));
+        }
       };
 
       this.socket.onmessage = (event) => {
@@ -139,10 +217,15 @@ export class GameWSClient {
             if (this.onJoinedCallback) {
               this.onJoinedCallback(msg.playerId, msg.initialState);
             }
+            finishConnect();
           } else if (msg.type === 'snapshot') {
             if (this.onSnapshotCallback) {
               this.onSnapshotCallback(msg);
             }
+          } else if (msg.type === 'error') {
+            const reason = msg.message || 'El servidor rechazo la conexion de juego';
+            console.error('[GameWS] Error del servidor:', reason);
+            failConnect(new Error(reason));
           }
         } catch (e) {
           console.error('[GameWS] Error leyendo snapshot del juego:', e);
@@ -161,6 +244,8 @@ export class GameWSClient {
           dx: clampedDx,
           dy: clampedDy,
           action: action ?? null,
+          seq: this.inputSequence++,
+          clientTs: Date.now(),
         })
       );
     }

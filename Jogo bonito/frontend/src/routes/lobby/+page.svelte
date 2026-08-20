@@ -110,8 +110,15 @@
       const joined = await APIClient.joinRoom(room.id);
       await openRoomSelection(joined.room || room, false);
     } catch (e: any) {
-      // Si el error dice que somos el host o ya estamos en la sala
-      await openRoomSelection(room, false);
+      const msg = String(e?.message || '');
+      const isHostRoom = msg.toLowerCase().includes('you are the host');
+      const alreadyInRoom = msg.toLowerCase().includes('already') || msg.toLowerCase().includes('ya estas');
+
+      if (isHostRoom || alreadyInRoom) {
+        await openRoomSelection(room, false);
+      } else {
+        alert(`No se pudo unir a la sala: ${msg || 'error desconocido'}`);
+      }
     } finally {
       loading = false;
     }
@@ -156,7 +163,8 @@
     isReady = true;
 
     // Navegar a la pantalla de juego con la sala y token
-    const playUrl = `${base}/play?roomId=${encodeURIComponent(activeRoom.id)}&class=${encodeURIComponent(selectedClass.id)}&color=${encodeURIComponent(selectedClass.color)}&token=${encodeURIComponent(token)}`;
+    const difficulty = encodeURIComponent(activeRoom.difficulty || 'normal');
+    const playUrl = `${base}/play?roomId=${encodeURIComponent(activeRoom.id)}&class=${encodeURIComponent(selectedClass.id)}&color=${encodeURIComponent(selectedClass.color)}&token=${encodeURIComponent(token)}&difficulty=${difficulty}`;
     window.location.href = playUrl;
   }
 </script>

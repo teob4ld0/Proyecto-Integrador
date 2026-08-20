@@ -22,10 +22,14 @@ export function shouldHitPlayer(
   playerPos: { x: number; y: number },
   pulseWidth: number,
   isClashing: boolean,
-  effectiveDt: number
+  effectiveDt: number,
+  isStruggleOngoing: boolean = false,
+  endX: number = 0
 ): boolean {
-  if (laser.ownerId !== 'boss' || isClashing || effectiveDt <= 0) return false;
+  if (laser.ownerId !== 'boss' || isClashing || isStruggleOngoing || effectiveDt <= 0) return false;
   if (playerPos.x >= laser.sourceX) return false;
+  // Si el láser va hacia la izquierda y no ha llegado a la posición X del jugador, no hay impacto
+  if (laser.direction !== 'right' && playerPos.x < endX) return false;
 
   const dy = Math.abs(playerPos.y - laser.sourceY);
   return dy < pulseWidth * 0.5 + 4;

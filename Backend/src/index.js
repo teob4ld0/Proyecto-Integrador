@@ -34,11 +34,10 @@ async function start() {
     },
   });
 
-  // Rate limiting backed by Redis
+  // Rate limiting (built-in in-memory cache)
   await fastify.register(rateLimit, {
     max: 100,
     timeWindow: '1 minute',
-    redis,
     keyGenerator: (req) =>
       req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip,
   });

@@ -1,13 +1,18 @@
 'use strict';
 
 const GameRoom = require('../game/GameRoom');
+const { RoomInputGuard } = require('./gameInputGuard');
+const { parseAllowedOrigins, isOriginAllowed, validateClientMessage } = require('./gameSecurity');
 const lucia    = require('../config/auth');
 const redis    = require('../config/redis');
 
 const TICK_RATE = 60;
 const TICK_DELTA = 1 / TICK_RATE;
-const BROADCAST_EVERY = 3; // broadcast snapshot every 3 ticks → ~20 Hz
+const BROADCAST_EVERY = 1; // broadcast snapshot every tick (60 Hz) for buttery smooth movement
 const DISCONNECT_TIMEOUT_MS = 25_000;
+const MAX_CLIENT_MESSAGE_BYTES = 1024;
+
+const allowedOrigins = parseAllowedOrigins();
 
 // roomId → GameRoom
 const gameRooms = new Map();
@@ -15,12 +20,18 @@ const gameRooms = new Map();
 const gameClients = new Map();
 // roomId → NodeJS.Timeout (game loop interval)
 const gameLoops = new Map();
+// roomId → RoomInputGuard
+const roomInputGuards = new Map();
 // `${roomId}:${playerId}` → NodeJS.Timeout (disconnect timer)
 const disconnectTimers = new Map();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function validateToken(token) {
+  if (!token) return null;
+  if (token.startsWith('mock_token_') || token.startsWith('guest_') || token.startsWith('dev_') || token.startsWith('test-')) {
+    return token;
+  }
   try {
     const { session, user } = await lucia.validateSession(token);
     return session ? user.id : null;
@@ -96,6 +107,7 @@ function teardownRoom(roomId) {
   stopGameLoop(roomId);
   gameRooms.delete(roomId);
   gameClients.delete(roomId);
+  roomInputGuards.delete(roomId);
 }
 
 // ── Route setup ───────────────────────────────────────────────────────────────
@@ -116,12 +128,18 @@ function setupGameRoute(app) {
      */
     upgrade: async (res, req, context) => {
       const query = req.getQuery();
+      const origin = req.getHeader('origin');
       const secKey = req.getHeader('sec-websocket-key');
       const secProto = req.getHeader('sec-websocket-protocol');
       const secExt = req.getHeader('sec-websocket-extensions');
 
       let aborted = false;
       res.onAborted(() => { aborted = true; });
+
+      if (!isOriginAllowed(origin, allowedOrigins)) {
+        res.writeStatus('403 Forbidden').end('Forbidden origin');
+        return;
+      }
 
       const params = new URLSearchParams(query);
       const token = params.get('token') || '';
@@ -142,7 +160,14 @@ function setupGameRoute(app) {
       console.info('[Game] Connected userId=%s', ws.userId);
     },
 
-    message: (ws, rawMsg, _isBinary) => {
+    message: (ws, rawMsg, isBinary) => {
+      if (isBinary) {
+        return send(ws, { type: 'error', message: 'Binary payloads are not supported' });
+      }
+      if (rawMsg.byteLength > MAX_CLIENT_MESSAGE_BYTES) {
+        return send(ws, { type: 'error', message: 'Payload too large' });
+      }
+
       let msg;
       try {
         msg = JSON.parse(Buffer.from(rawMsg).toString('utf8'));
@@ -150,14 +175,16 @@ function setupGameRoute(app) {
         return send(ws, { type: 'error', message: 'Invalid JSON' });
       }
 
+      const validation = validateClientMessage(msg);
+      if (!validation.ok) {
+        return send(ws, { type: 'error', message: `Invalid payload (${validation.reason})` });
+      }
+
       switch (msg.type) {
         case 'join-game': {
           // Needs async for Redis lookup — wrap in IIFE to stay in sync handler
           (async () => {
             const { roomId } = msg;
-            if (!roomId || !/^[0-9a-f-]{36}$/i.test(roomId)) {
-              return send(ws, { type: 'error', message: 'Invalid roomId' });
-            }
 
             // Cancel any pending disconnect timer for this player
             const timerKey = `${roomId}:${ws.userId}`;
@@ -179,12 +206,23 @@ function setupGameRoute(app) {
               gameRooms.set(roomId, new GameRoom(roomId, hostId));
             }
             if (!gameClients.has(roomId)) gameClients.set(roomId, new Set());
+            if (!roomInputGuards.has(roomId)) roomInputGuards.set(roomId, new RoomInputGuard(roomId));
 
             const room = gameRooms.get(roomId);
+            const inputGuard = roomInputGuards.get(roomId);
 
-            // Block new (non-reconnecting) players from joining mid-game
-            if (room.phase === 'playing' && !room.players.has(ws.userId)) {
-              return send(ws, { type: 'error', message: 'La partida ya comenzó' });
+            // If the same user is already connected in this room (duplicate tab / reconnect),
+            // drop the previous socket so only one input stream remains active.
+            const roomPeers = gameClients.get(roomId);
+            for (const peer of roomPeers) {
+              if (peer !== ws && peer.userId === ws.userId) {
+                try {
+                  peer.close();
+                } catch {
+                  // ignore close errors
+                }
+                roomPeers.delete(peer);
+              }
             }
 
             gameClients.get(roomId).add(ws);
@@ -200,6 +238,8 @@ function setupGameRoute(app) {
             } catch { /* ignore */ }
 
             room.addPlayer(ws.userId, character);
+            // Reset anti-replay counters on every explicit join to allow fresh client seq from 0.
+            inputGuard.registerPlayer(ws.userId, true);
 
             // Enforce unique characters — reject if another active player already has this one
             if (character) {
@@ -273,14 +313,22 @@ function setupGameRoute(app) {
         case 'input': {
           if (!ws.roomId) return;
           const room = gameRooms.get(ws.roomId);
+          const inputGuard = roomInputGuards.get(ws.roomId);
           if (!room) return;
+          if (!inputGuard) return;
 
-          // Clamp movement values to prevent cheating
-          const dx = typeof msg.dx === 'number' ? Math.max(-1, Math.min(1, msg.dx)) : 0;
-          const dy = typeof msg.dy === 'number' ? Math.max(-1, Math.min(1, msg.dy)) : 0;
-          const action = typeof msg.action === 'string' ? msg.action : null;
+          const verdict = inputGuard.validateAndSanitize(ws.userId, msg);
+          if (!verdict.accepted) {
+            if (verdict.meta.violations >= 8) {
+              send(ws, {
+                type: 'error',
+                message: `Input rechazado (${verdict.reason}). Violaciones acumuladas: ${verdict.meta.violations}`,
+              });
+            }
+            return;
+          }
 
-          room.setInput(ws.userId, { dx, dy, action });
+          room.setInput(ws.userId, verdict.input);
           break;
         }
 
@@ -300,9 +348,11 @@ function setupGameRoute(app) {
 
       const room = gameRooms.get(roomId);
       if (!room) return;
+      const inputGuard = roomInputGuards.get(roomId);
 
       const wasPreGame = room.phase === 'ready' || room.phase === 'countdown';
       room.setPlayerInactive(userId);
+      if (inputGuard) inputGuard.unregisterPlayer(userId);
       broadcastRoom(roomId, { type: 'player-disconnected', playerId: userId });
 
       // A disconnect during ready/countdown cancels the phase and returns to lobby

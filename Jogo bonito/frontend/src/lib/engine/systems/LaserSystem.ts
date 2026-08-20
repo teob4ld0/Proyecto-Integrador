@@ -184,7 +184,7 @@ export class LaserSystem {
         }
 
         // Daño al Jugador (Láser de Boss) - solo si no está en pugna activa
-        if (shouldHitPlayer(laser, playerPos, pulseWidth, isClashing, effectiveDt)) {
+        if (shouldHitPlayer(laser, playerPos, pulseWidth, isClashing, effectiveDt, isStruggleOngoing, endX)) {
           if (callbacks?.onPlayerHit) callbacks.onPlayerHit();
         }
 

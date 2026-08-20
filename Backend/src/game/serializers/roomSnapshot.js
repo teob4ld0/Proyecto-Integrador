@@ -29,11 +29,15 @@ function buildRoomSnapshot(room, options) {
     tick: room.tick,
     phase: room.phase,
     countdownMs: room.phase === 'countdown' ? Math.max(0, room._countdownMs) : undefined,
+    stageTime: room.stageTime,
     players: serializePlayers(room.players, fallbackStats),
     bullets: room.bulletSystem.getState(),
     lasers: room.laserSystem.getState(),
     walls: room.wallSystem.getState(),
-    boss: { x: room.bossPos.x, y: room.bossPos.y, hp: room.bossHp, maxHp: room.maxBossHp },
+    enemies: room.enemySystem.getState(),
+    items: room.itemSystem.getState(),
+    boss: room.boss.toSnapshot(),
+    campaign: room.campaign.toSnapshot(),
     struggle: room._beamStruggleController.toSnapshot(),
   };
 }
