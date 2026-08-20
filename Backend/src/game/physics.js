@@ -5,7 +5,7 @@ const planck = require('planck');
 const WORLD_WIDTH = 800;
 const WORLD_HEIGHT = 600;
 const PLAYER_RADIUS = 10;
-const PLAYER_SPEED = 200; // units per second
+const PLAYER_SPEED = 380; // units per second (snappy Danmaku movement)
 
 /**
  * Create a Planck.js world with no gravity and boundary walls.
@@ -52,15 +52,16 @@ function addPlayerBody(world, x, y) {
 /**
  * Apply normalised directional input to a player body.
  * @param {planck.Body} body
- * @param {{ dx: number, dy: number }} input - components in [-1, 1]
+ * @param {{ dx: number, dy: number, focus?: boolean }} input - components in [-1, 1]
  */
 function applyInput(body, input) {
-  const { dx = 0, dy = 0 } = input;
+  const { dx = 0, dy = 0, focus = false } = input;
   const len = Math.sqrt(dx * dx + dy * dy);
+  const speed = focus ? PLAYER_SPEED * 0.45 : PLAYER_SPEED;
   if (len > 0) {
     body.setLinearVelocity(planck.Vec2(
-      (dx / len) * PLAYER_SPEED,
-      (dy / len) * PLAYER_SPEED,
+      (dx / len) * speed,
+      (dy / len) * speed,
     ));
   } else {
     body.setLinearVelocity(planck.Vec2(0, 0));

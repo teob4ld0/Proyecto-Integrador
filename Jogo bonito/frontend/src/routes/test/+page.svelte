@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Stage1Engine } from '$lib/engine/Stage1Engine';
+  import { GameEngine } from '$lib/engine/GameEngine';
 
   let canvasRef: HTMLCanvasElement;
-  let engine: Stage1Engine | null = null;
+  let engine: GameEngine | null = null;
   const keys: Record<string, boolean> = {};
   let animFrameId: number;
   let lastTime = performance.now();
@@ -12,7 +12,7 @@
 
   onMount(() => {
     if (!canvasRef) return;
-    engine = new Stage1Engine(canvasRef, 1024, 576);
+    engine = new GameEngine(canvasRef, 1024, 576);
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);

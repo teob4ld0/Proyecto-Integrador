@@ -125,10 +125,10 @@ export class Boss {
     this.spellcardName = BOSS_PHASES[0].name;
     this.isSpellCard = BOSS_PHASES[0].isSpellCard;
     this.isDefeated = false;
-    this.isInvulnerable = false;
-    this.isRefilling = false;
-    this.refillTimer = 0;
-    this.displayHpPercent = 100;
+    this.isInvulnerable = true;
+    this.isRefilling = true;
+    this.refillTimer = 1.3;
+    this.displayHpPercent = 0;
   }
 
   public reset(initialHp: number = 110): void {

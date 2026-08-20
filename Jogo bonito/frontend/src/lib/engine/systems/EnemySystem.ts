@@ -3,6 +3,7 @@ import { Enemy, type EnemyConfig } from '../entities/Enemy';
 import type { BulletSystem } from './BulletSystem';
 import type { LaserSystem } from './LaserSystem';
 import type { ItemType } from '../types';
+import type { ServerEnemy } from '../../network/wsClient';
 
 export class EnemySystem {
   public enemies: Enemy[] = [];
@@ -18,6 +19,45 @@ export class EnemySystem {
 
   public setTextures(textures: Record<string, PIXI.Texture>): void {
     this.textures = textures;
+  }
+
+  public applyBackendEnemies(serverEnemies: ServerEnemy[], scaleX: number, scaleY: number): void {
+    const currentIds = new Set(serverEnemies.map(e => e.id));
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (!currentIds.has(e.id)) {
+        e.destroy();
+        this.enemies.splice(i, 1);
+      }
+    }
+
+    for (const se of serverEnemies) {
+      let existing = this.enemies.find(e => e.id === se.id);
+      const targetX = se.x * scaleX;
+      const targetY = se.y * scaleY;
+      if (!existing) {
+        let tex = undefined;
+        if (se.type === 'green_fairy') tex = this.textures.fairyGreen;
+        else if (se.type === 'red_fairy') tex = this.textures.fairyRed;
+        else if (se.type === 'big_fairy') tex = this.textures.fairyBig;
+
+        existing = new Enemy(this.container, {
+          id: se.id,
+          type: se.type as any,
+          startX: targetX,
+          startY: targetY,
+          hp: se.hp,
+          radius: se.radius * scaleX,
+          texture: tex,
+        });
+        this.enemies.push(existing);
+      }
+      existing.pos.x += (targetX - existing.pos.x) * 0.4;
+      existing.pos.y += (targetY - existing.pos.y) * 0.4;
+      existing.hp = se.hp;
+      existing.maxHp = se.maxHp;
+      existing.container.position.set(existing.pos.x, existing.pos.y);
+    }
   }
 
   public spawnEnemy(config: EnemyConfig): Enemy {
@@ -215,7 +255,8 @@ export class EnemySystem {
     animTimer: number,
     playerPos: { x: number; y: number },
     bulletSystem: BulletSystem,
-    onEnemyDefeated?: (x: number, y: number, score: number, itemDrop: ItemType) => void
+    onEnemyDefeated?: (x: number, y: number, score: number, itemDrop: ItemType) => void,
+    onEnemyHit?: (damage: number) => void
   ): void {
     // 1. Actualizar enemigos y limpiar muertos / fuera de pantalla
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -242,6 +283,9 @@ export class EnemySystem {
         if (dist < enemy.radius + 6) {
           bulletHit = true;
           const isKilled = enemy.takeDamage(1.5);
+          if (onEnemyHit) {
+            onEnemyHit(1.5);
+          }
 
           if (isKilled) {
             if (onEnemyDefeated) {

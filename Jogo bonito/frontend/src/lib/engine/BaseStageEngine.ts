@@ -6,13 +6,14 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { WallSystem } from './systems/WallSystem';
 import { LaserSystem } from './systems/LaserSystem';
 import { BulletSystem } from './systems/BulletSystem';
+import { SCALE_X, SCALE_Y, CANVAS_WIDTH, CANVAS_HEIGHT } from './physics/RenderConstants';
 
 export class BaseStageEngine {
   public app: PIXI.Application;
 
   // Factores de escalado: Backend (800x600) -> Frontend (1024x576)
-  public readonly SCALE_X = 1024 / 800; // 1.28
-  public readonly SCALE_Y = 576 / 600;  // 0.96
+  public readonly SCALE_X = SCALE_X;
+  public readonly SCALE_Y = SCALE_Y;
 
   // Capas WebGL
   public bgContainer = new PIXI.Container();
@@ -56,8 +57,8 @@ export class BaseStageEngine {
   constructor(canvas: HTMLCanvasElement, width: number = 1024, height: number = 576) {
     this.app = new PIXI.Application({
       view: canvas,
-      width,
-      height,
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
       backgroundColor: 0x06040a,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,

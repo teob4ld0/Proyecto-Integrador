@@ -1,4 +1,5 @@
 export type CharacterClass = 'Tank' | 'Support' | 'DPS' | 'Special_Attack' | 'defense' | 'healer' | 'physical' | 'attack';
+export type GameDifficulty = 'normal' | 'difficult' | 'no_mercy';
 
 export interface Bullet {
   x: number;

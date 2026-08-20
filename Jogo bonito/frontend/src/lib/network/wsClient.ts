@@ -47,7 +47,47 @@ export interface ServerBoss {
   y: number;
   hp: number;
   maxHp: number;
+  phase?: number;
+  remainingStocks?: number;
+  spellcardName?: string;
   spellcard?: string;
+  isSpellCard?: boolean;
+  isActive?: boolean;
+  isDefeated?: boolean;
+  isRefilling?: boolean;
+  isLockedForBeam?: boolean;
+}
+
+export interface ServerEnemy {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  radius: number;
+}
+
+export interface ServerItem {
+  id: string;
+  x: number;
+  y: number;
+  type: 'power' | 'point' | 'bomb_frag' | 'life_frag' | string;
+}
+
+export interface ServerCampaign {
+  difficulty: string;
+  difficultyLabel: string;
+  world: number;
+  stage: number;
+  stageState: string;
+  campaignComplete: boolean;
+  bannerText: string;
+  bannerSubtext: string;
+  clearTitle: string;
+  clearSubtext: string;
+  worldName?: string;
+  stageTitle?: string;
 }
 
 export interface ServerBeamStruggle {
@@ -72,10 +112,15 @@ export interface GameSnapshot {
   timestamp?: number;
   phase?: string;
   countdownMs?: number;
+  stageTime?: number;
   players: ServerPlayer[];
   bullets: ServerBullet[];
   lasers?: ServerLaser[];
+  walls?: any[];
+  enemies?: ServerEnemy[];
+  items?: ServerItem[];
   boss?: ServerBoss;
+  campaign?: ServerCampaign;
   struggle?: ServerBeamStruggle;
 }
 
@@ -91,6 +136,7 @@ export class GameWSClient {
   private onSnapshotCallback: ((snapshot: GameSnapshot) => void) | null = null;
   private onJoinedCallback: ((playerId: string, initialState: GameSnapshot) => void) | null = null;
   private myPlayerId: string = '';
+  private inputSequence = 0;
 
   constructor(private token: string, private defaultPort: number = 9001) {}
 
@@ -118,6 +164,7 @@ export class GameWSClient {
 
       this.socket.onopen = () => {
         console.log('[GameWS] Conectado al servidor de juego en:', url);
+        this.inputSequence = 0;
         this.send({ type: 'join-game', roomId });
         resolve();
       };
@@ -161,6 +208,8 @@ export class GameWSClient {
           dx: clampedDx,
           dy: clampedDy,
           action: action ?? null,
+          seq: this.inputSequence++,
+          clientTs: Date.now(),
         })
       );
     }

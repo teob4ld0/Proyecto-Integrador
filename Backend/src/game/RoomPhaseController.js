@@ -5,7 +5,7 @@ const READY_TIMEOUT_MS = 30_000;
 
 class RoomPhaseController {
   constructor() {
-    this.phase = 'lobby';
+    this.phase = 'playing';
     this.countdownMs = 0;
     this._readyDeadlineMs = null;
   }

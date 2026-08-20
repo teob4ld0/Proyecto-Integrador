@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js';
 import type { ItemDrop, ItemType } from '../types';
 import type { ParticleSystem } from './ParticleSystem';
+import type { ServerItem } from '../../network/wsClient';
 
 export class ItemSystem {
   public items: ItemDrop[] = [];
@@ -11,6 +12,19 @@ export class ItemSystem {
     if (parentContainer) {
       parentContainer.addChild(this.graphics);
     }
+  }
+
+  public applyBackendItems(serverItems: ServerItem[], scaleX: number, scaleY: number): void {
+    this.items = serverItems.map(it => ({
+      id: it.id,
+      x: it.x * scaleX,
+      y: it.y * scaleY,
+      vx: 0,
+      vy: 0,
+      type: it.type as ItemType,
+      value: it.type === 'power' ? 5 : (it.type === 'point' ? 1000 : 5000),
+      magnetized: false,
+    }));
   }
 
   public spawnItem(x: number, y: number, type: ItemType = 'power'): ItemDrop {

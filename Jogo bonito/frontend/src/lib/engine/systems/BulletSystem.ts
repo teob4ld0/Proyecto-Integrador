@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
 import type { Bullet } from '../types';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, OFFSCREEN_MARGIN } from '../physics/RenderConstants';
 
 export class BulletSystem {
   public playerBullets: Bullet[] = [];
@@ -77,7 +78,7 @@ export class BulletSystem {
       pb.x += pb.vx * dt;
       pb.y += pb.vy * dt;
 
-      if (pb.x > 1050 || pb.x < -30 || pb.y < -30 || pb.y > 600) {
+      if (pb.x > CANVAS_WIDTH + OFFSCREEN_MARGIN || pb.x < -OFFSCREEN_MARGIN || pb.y < -OFFSCREEN_MARGIN || pb.y > CANVAS_HEIGHT + OFFSCREEN_MARGIN) {
         this.playerBullets.splice(i, 1);
         continue;
       }
@@ -96,7 +97,7 @@ export class BulletSystem {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      if (b.x < -30 || b.x > 1050 || b.y < -30 || b.y > 600) {
+      if (b.x < -OFFSCREEN_MARGIN || b.x > CANVAS_WIDTH + OFFSCREEN_MARGIN || b.y < -OFFSCREEN_MARGIN || b.y > CANVAS_HEIGHT + OFFSCREEN_MARGIN) {
         this.bullets.splice(i, 1);
         continue;
       }

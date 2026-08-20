@@ -156,7 +156,8 @@
     isReady = true;
 
     // Navegar a la pantalla de juego con la sala y token
-    const playUrl = `${base}/play?roomId=${encodeURIComponent(activeRoom.id)}&class=${encodeURIComponent(selectedClass.id)}&color=${encodeURIComponent(selectedClass.color)}&token=${encodeURIComponent(token)}`;
+    const difficulty = encodeURIComponent(activeRoom.difficulty || 'normal');
+    const playUrl = `${base}/play?roomId=${encodeURIComponent(activeRoom.id)}&class=${encodeURIComponent(selectedClass.id)}&color=${encodeURIComponent(selectedClass.color)}&token=${encodeURIComponent(token)}&difficulty=${difficulty}`;
     window.location.href = playUrl;
   }
 </script>
