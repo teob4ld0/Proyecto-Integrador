@@ -64,14 +64,21 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS chip (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id TEXT    NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-    name     TEXT    NOT NULL,
-    rarity   TEXT    NOT NULL,
-    level    INTEGER NOT NULL DEFAULT 1,
-    modifiers TEXT,
-    image    TEXT,
-    scraps   INTEGER NOT NULL DEFAULT 0
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+    name         TEXT    NOT NULL,
+    rarity       INTEGER NOT NULL,
+    level        INTEGER NOT NULL DEFAULT 1,
+    image        TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS chip_stats (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    chip_id INTEGER NOT NULL UNIQUE REFERENCES chip(id) ON DELETE CASCADE,
+    HP      INTEGER,
+    ATK     INTEGER,
+    DEF     INTEGER,
+    SP_CHARGE     INTEGER
   );
 `);
 
@@ -85,6 +92,29 @@ for (const sql of migrations) {
     db.exec(sql);
   } catch {
     // Column already exists – ignore
+  }
+}
+
+// Migration: move chip.owner_id (user) -> chip.inventory_id (inventory)
+{
+  const cols = db.prepare('PRAGMA table_info(chip)').all();
+  if (cols.some(c => c.name === 'owner_id')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chip_migrated (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+        name         TEXT    NOT NULL,
+        rarity       INTEGER NOT NULL,
+        level        INTEGER NOT NULL DEFAULT 1,
+        image        TEXT
+      );
+      INSERT OR IGNORE INTO chip_migrated (id, inventory_id, name, rarity, level, image)
+        SELECT c.id, i.id, c.name, c.rarity, c.level, c.image
+        FROM chip c
+        JOIN inventory i ON i.owner_id = c.owner_id;
+      DROP TABLE chip;
+      ALTER TABLE chip_migrated RENAME TO chip;
+    `);
   }
 }
 

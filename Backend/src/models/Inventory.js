@@ -21,6 +21,12 @@ const Inventory = {
       .all(inventory.id)
       .map(r => r.skin_id);
 
+    const chips = db.prepare('SELECT * FROM chip WHERE inventory_id = ?').all(inventory.id);
+    for (const chip of chips) {
+      chip.stats = db.prepare('SELECT HP, ATK, DEF, SPD FROM chip_stats WHERE chip_id = ?').get(chip.id) ?? null;
+    }
+    inventory.chips = chips;
+
     return inventory;
   },
 
@@ -41,25 +47,11 @@ const Inventory = {
     ).run(inv.id, skinId);
   },
 
-  removeCharacterSkin(ownerId, skinId) {
-    const inv = db.prepare('SELECT id FROM inventory WHERE owner_id = ?').get(ownerId);
-    db.prepare(
-      'DELETE FROM inventory_character_skin WHERE inventory_id = ? AND skin_id = ?'
-    ).run(inv.id, skinId);
-  },
-
   // Effect skins (por ahora sólo IDs)
   addEffectSkin(ownerId, skinId) {
     const inv = db.prepare('SELECT id FROM inventory WHERE owner_id = ?').get(ownerId);
     db.prepare(
       'INSERT OR IGNORE INTO inventory_effect_skin (inventory_id, skin_id) VALUES (?, ?)'
-    ).run(inv.id, skinId);
-  },
-
-  removeEffectSkin(ownerId, skinId) {
-    const inv = db.prepare('SELECT id FROM inventory WHERE owner_id = ?').get(ownerId);
-    db.prepare(
-      'DELETE FROM inventory_effect_skin WHERE inventory_id = ? AND skin_id = ?'
     ).run(inv.id, skinId);
   },
 };

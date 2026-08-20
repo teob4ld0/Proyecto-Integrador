@@ -2,31 +2,45 @@ const db = require('../config/database');
 
 const Chip = {
   findById(id) {
-    return db.prepare('SELECT * FROM chip WHERE id = ?').get(id);
-  },
-
-  findByOwner(ownerId) {
-    return db.prepare('SELECT * FROM chip WHERE owner_id = ?').all(ownerId);
-  },
-
-  create({ ownerId, name, rarity, level = 1, modifiers = null, image = null, scraps = 0 }) {
-    const result = db.prepare(
-      'INSERT INTO chip (owner_id, name, rarity, level, modifiers, image, scraps) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(ownerId, name, rarity, level, modifiers, image, scraps);
-    return this.findById(result.lastInsertRowid);
-  },
-
-  // Destruir una chip devuelve sus scraps al inventario del dueño
-  destroy(id) {
-    const chip = this.findById(id);
+    const chip = db.prepare('SELECT * FROM chip WHERE id = ?').get(id);
     if (!chip) return null;
-    db.prepare('DELETE FROM chip WHERE id = ?').run(id);
-    db.prepare('UPDATE inventory SET scraps = scraps + ? WHERE owner_id = ?').run(chip.scraps, chip.owner_id);
-    return chip.scraps;
+    chip.stats = db.prepare('SELECT HP, ATK, DEF, SP_CHARGE FROM chip_stats WHERE chip_id = ?').get(chip.id) ?? null;
+    return chip;
+  },
+
+  findByInventory(inventoryId) {
+    const chips = db.prepare('SELECT * FROM chip WHERE inventory_id = ?').all(inventoryId);
+    for (const chip of chips) {
+      chip.stats = db.prepare('SELECT HP, ATK, DEF, SP_CHARGE FROM chip_stats WHERE chip_id = ?').get(chip.id) ?? null;
+    }
+    return chips;
+  },
+
+  create({ inventoryId, name, rarity, level = 1, image = null, stats = null }) {
+    const result = db.prepare(
+      'INSERT INTO chip (inventory_id, name, rarity, level, image) VALUES (?, ?, ?, ?, ?)'
+    ).run(inventoryId, name, rarity, level, image);
+    const chipId = result.lastInsertRowId;
+
+    if (stats) {
+      const { HP = null, ATK = null, DEF = null, SP_CHARGE = null } = stats;
+      db.prepare(
+        'INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE) VALUES (?, ?, ?, ?, ?)'
+      ).run(chipId, HP, ATK, DEF, SP_CHARGE);
+    }
+
+    return this.findById(chipId);
   },
 
   updateLevel(id, level) {
     db.prepare('UPDATE chip SET level = ? WHERE id = ?').run(level, id);
+  },
+
+  updateStats(chipId, { HP = null, ATK = null, DEF = null, SP_CHARGE = null }) {
+    db.prepare(`
+      INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chip_id) DO UPDATE SET HP = excluded.HP, ATK = excluded.ATK, DEF = excluded.DEF, SP_CHARGE = excluded.SP_CHARGE
+    `).run(chipId, HP, ATK, DEF, SP_CHARGE);
   },
 };
 
