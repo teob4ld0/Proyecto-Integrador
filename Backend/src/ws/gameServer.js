@@ -211,6 +211,20 @@ function setupGameRoute(app) {
             const room = gameRooms.get(roomId);
             const inputGuard = roomInputGuards.get(roomId);
 
+            // If the same user is already connected in this room (duplicate tab / reconnect),
+            // drop the previous socket so only one input stream remains active.
+            const roomPeers = gameClients.get(roomId);
+            for (const peer of roomPeers) {
+              if (peer !== ws && peer.userId === ws.userId) {
+                try {
+                  peer.close();
+                } catch {
+                  // ignore close errors
+                }
+                roomPeers.delete(peer);
+              }
+            }
+
             gameClients.get(roomId).add(ws);
 
             // Read character assigned during character selection from Redis room data
@@ -224,7 +238,8 @@ function setupGameRoute(app) {
             } catch { /* ignore */ }
 
             room.addPlayer(ws.userId, character);
-            inputGuard.registerPlayer(ws.userId);
+            // Reset anti-replay counters on every explicit join to allow fresh client seq from 0.
+            inputGuard.registerPlayer(ws.userId, true);
 
             // Enforce unique characters — reject if another active player already has this one
             if (character) {

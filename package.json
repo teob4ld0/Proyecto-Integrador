@@ -1,4 +1,8 @@
 {
+  "private": true,
+  "scripts": {
+    "dev:room": "npm --prefix \"./Jogo bonito/frontend\" run dev:room"
+  },
   "dependencies": {
     "redis": "^5.12.1"
   }

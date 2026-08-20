@@ -20,8 +20,8 @@ class RoomInputGuard {
     this.playerState = new Map();
   }
 
-  registerPlayer(playerId) {
-    if (this.playerState.has(playerId)) return;
+  registerPlayer(playerId, reset = false) {
+    if (this.playerState.has(playerId) && !reset) return;
     this.playerState.set(playerId, {
       lastInputAt: 0,
       recentInputTimes: [],
@@ -58,15 +58,12 @@ class RoomInputGuard {
 
     const seq = Number.isInteger(rawInput?.seq) ? Number(rawInput.seq) : null;
     if (seq !== null) {
-      if (state.lastSequence >= 0 && seq <= state.lastSequence) {
-        state.violations++;
-        return this._reject('stale-sequence', state);
-      }
+      // Accept out-of-order sequence values to tolerate reconnects or multiple tabs.
+      // We keep the max seen sequence only as metadata.
       if (state.lastSequence >= 0 && seq - state.lastSequence > MAX_SEQUENCE_JUMP) {
         state.violations++;
-        return this._reject('sequence-jump', state);
       }
-      state.lastSequence = seq;
+      state.lastSequence = Math.max(state.lastSequence, seq);
     }
 
     const clientTs = Number.isFinite(rawInput?.clientTs) ? Number(rawInput.clientTs) : null;
@@ -76,11 +73,8 @@ class RoomInputGuard {
         state.violations++;
         return this._reject('clock-skew', state);
       }
-      if (state.lastClientTs > 0 && clientTs < state.lastClientTs) {
-        state.violations++;
-        return this._reject('stale-client-ts', state);
-      }
-      state.lastClientTs = clientTs;
+      // Accept non-monotonic client timestamps; keep only the latest seen for diagnostics.
+      state.lastClientTs = Math.max(state.lastClientTs, clientTs);
     }
 
     if (!this._withinInputRateLimit(state, now)) {
