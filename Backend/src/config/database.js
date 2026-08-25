@@ -18,7 +18,8 @@ db.exec(`
     password    TEXT    NOT NULL,
     is_verified INTEGER NOT NULL DEFAULT 0,
     verification_token TEXT,
-    danmas      INTEGER NOT NULL DEFAULT 0
+    danmas      INTEGER NOT NULL DEFAULT 0,
+    inventory_id INTEGER NOT NULL UNIQUE REFERENCES inventory(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS user_session (

@@ -13,13 +13,13 @@ const User = {
     return db.prepare('SELECT id, username, email FROM user').all();
   },
 
-  create({ id, username, email, password, verificationToken, danmas }) {
+  create({ id, username, email, password, verificationToken, danmas, inventoryId }) {
     const insert = db.transaction(() => {
       db.prepare(
-        'INSERT INTO user (id, username, email, password, is_verified, verification_token, danmas) VALUES (?, ?, ?, ?, 0, ?, ?)'
-      ).run(id, username, email, password, verificationToken ?? null, danmas ?? 0);
+        'INSERT INTO user (id, username, email, password, is_verified, verification_token, danmas, inventory_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
+      ).run(id, username, email, password, verificationToken ?? null, danmas ?? 0, inventoryId);
 
-      db.prepare('INSERT INTO inventory (owner_id) VALUES (?)').run(id);
+      db.prepare('INSERT INTO inventory (owner_id) VALUES (?)').run(inventoryId);
     });
     insert();
     return this.findById(id);
