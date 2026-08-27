@@ -18,7 +18,8 @@ db.exec(`
     password    TEXT    NOT NULL,
     is_verified INTEGER NOT NULL DEFAULT 0,
     verification_token TEXT,
-    danmas      INTEGER NOT NULL DEFAULT 0
+    danmas      INTEGER NOT NULL DEFAULT 0,
+    inventory_id INTEGER NOT NULL UNIQUE REFERENCES inventory(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS user_session (
@@ -64,14 +65,28 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS chip (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id TEXT    NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-    name     TEXT    NOT NULL,
-    rarity   TEXT    NOT NULL,
-    level    INTEGER NOT NULL DEFAULT 1,
-    modifiers TEXT,
-    image    TEXT,
-    scraps   INTEGER NOT NULL DEFAULT 0
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+    name         TEXT    NOT NULL,
+    rarity       INTEGER NOT NULL,
+    level        INTEGER NOT NULL DEFAULT 1,
+    image        TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS chip_stats (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    chip_id INTEGER NOT NULL UNIQUE REFERENCES chip(id) ON DELETE CASCADE,
+    HP      INTEGER,
+    ATK     INTEGER,
+    DEF     INTEGER,
+    SP_CHARGE     INTEGER,
+    CRIT_CHANCE    INTEGER,
+    SP_DRAIN     INTEGER,
+    HEALING_POINTS     INTEGER,
+    BULLET_ARMOR     INTEGER,
+    ULTIMATE_DAMAGE     INTEGER,
+    ULTIMATE_HEALTH     INTEGER,
+    BUFFS     STRING
   );
 `);
 
@@ -79,12 +94,36 @@ db.exec(`
 // SQLite does not support IF NOT EXISTS in ALTER TABLE, so we catch the error.
 const migrations = [
   'ALTER TABLE user ADD COLUMN danmas INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE chip DROP COLUMN chip_stats_id',
 ];
 for (const sql of migrations) {
   try {
     db.exec(sql);
   } catch {
     // Column already exists – ignore
+  }
+}
+
+// Migration: move chip.owner_id (user) -> chip.inventory_id (inventory)
+{
+  const cols = db.prepare('PRAGMA table_info(chip)').all();
+  if (cols.some(c => c.name === 'owner_id')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chip_migrated (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+        name         TEXT    NOT NULL,
+        rarity       INTEGER NOT NULL,
+        level        INTEGER NOT NULL DEFAULT 1,
+        image        TEXT
+      );
+      INSERT OR IGNORE INTO chip_migrated (id, inventory_id, name, rarity, level, image)
+        SELECT c.id, i.id, c.name, c.rarity, c.level, c.image
+        FROM chip c
+        JOIN inventory i ON i.owner_id = c.owner_id;
+      DROP TABLE chip;
+      ALTER TABLE chip_migrated RENAME TO chip;
+    `);
   }
 }
 
