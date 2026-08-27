@@ -69,7 +69,6 @@ db.exec(`
     inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
     name         TEXT    NOT NULL,
     rarity       INTEGER NOT NULL,
-    chip_stats_id INTEGER UNIQUE REFERENCES chip_stats(id) ON DELETE CASCADE,
     level        INTEGER NOT NULL DEFAULT 1,
     image        TEXT
   );
@@ -84,7 +83,7 @@ db.exec(`
     CRIT_CHANCE    INTEGER,
     SP_DRAIN     INTEGER,
     HEALING_POINTS     INTEGER,
-    BULLET_HEALTH     INTEGER,
+    BULLET_ARMOR     INTEGER,
     ULTIMATE_DAMAGE     INTEGER,
     ULTIMATE_HEALTH     INTEGER,
     BUFFS     STRING
@@ -95,6 +94,7 @@ db.exec(`
 // SQLite does not support IF NOT EXISTS in ALTER TABLE, so we catch the error.
 const migrations = [
   'ALTER TABLE user ADD COLUMN danmas INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE chip DROP COLUMN chip_stats_id',
 ];
 for (const sql of migrations) {
   try {
