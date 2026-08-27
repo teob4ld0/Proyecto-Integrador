@@ -23,7 +23,7 @@ const Inventory = {
 
     const chips = db.prepare('SELECT * FROM chip WHERE inventory_id = ?').all(inventory.id);
     for (const chip of chips) {
-      chip.stats = db.prepare('SELECT HP, ATK, DEF, SPD FROM chip_stats WHERE chip_id = ?').get(chip.id) ?? null;
+      chip.stats = db.prepare('SELECT HP, ATK, DEF, SP_CHARGE, CRIT_CHANCE, SP_DRAIN, HEALING_POINTS, BULLET_HEALTH, ULTIMATE_DAMAGE, ULTIMATE_HEALTH, BUFFS, LEVEL FROM chip_stats WHERE chip_id = ?').get(chip.id) ?? null;
     }
     inventory.chips = chips;
 

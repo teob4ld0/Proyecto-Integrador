@@ -23,10 +23,10 @@ const Chip = {
     const chipId = result.lastInsertRowId;
 
     if (stats) {
-      const { HP = null, ATK = null, DEF = null, SP_CHARGE = null } = stats;
+      const { HP = null, ATK = null, DEF = null, SP_CHARGE = null, CRIT_CHANCE = null, SP_DRAIN = null, HEALING_POINTS = null, BULLET_HEALTH = null, ULTIMATE_DAMAGE = null, ULTIMATE_HEALTH = null, BUFFS = null, LEVEL = null } = stats;
       db.prepare(
-        'INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE) VALUES (?, ?, ?, ?, ?)'
-      ).run(chipId, HP, ATK, DEF, SP_CHARGE);
+        'INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE, CRIT_CHANCE, SP_DRAIN, HEALING_POINTS, BULLET_HEALTH, ULTIMATE_DAMAGE, ULTIMATE_HEALTH, BUFFS, LEVEL) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(chipId, HP, ATK, DEF, SP_CHARGE, CRIT_CHANCE, SP_DRAIN, HEALING_POINTS, BULLET_HEALTH, ULTIMATE_DAMAGE, ULTIMATE_HEALTH, BUFFS, LEVEL);
     }
 
     return this.findById(chipId);
@@ -36,11 +36,24 @@ const Chip = {
     db.prepare('UPDATE chip SET level = ? WHERE id = ?').run(level, id);
   },
 
-  updateStats(chipId, { HP = null, ATK = null, DEF = null, SP_CHARGE = null }) {
+  updateStats(chipId, { HP = null, ATK = null, DEF = null, SP_CHARGE = null, CRIT_CHANCE = null, SP_DRAIN = null, HEALING_POINTS = null, BULLET_HEALTH = null, ULTIMATE_DAMAGE = null, ULTIMATE_HEALTH = null, BUFFS = null, LEVEL = null }) {
     db.prepare(`
-      INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(chip_id) DO UPDATE SET HP = excluded.HP, ATK = excluded.ATK, DEF = excluded.DEF, SP_CHARGE = excluded.SP_CHARGE
-    `).run(chipId, HP, ATK, DEF, SP_CHARGE);
+      INSERT INTO chip_stats (chip_id, HP, ATK, DEF, SP_CHARGE, CRIT_CHANCE, SP_DRAIN, HEALING_POINTS, BULLET_HEALTH, ULTIMATE_DAMAGE, ULTIMATE_HEALTH, BUFFS, LEVEL) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(chip_id) DO UPDATE SET 
+        HP = excluded.HP, 
+        ATK = excluded.ATK, 
+        DEF = excluded.DEF, 
+        SP_CHARGE = excluded.SP_CHARGE,
+        CRIT_CHANCE = excluded.CRIT_CHANCE,
+        SP_DRAIN = excluded.SP_DRAIN,
+        HEALING_POINTS = excluded.HEALING_POINTS,
+        BULLET_HEALTH = excluded.BULLET_HEALTH,
+        ULTIMATE_DAMAGE = excluded.ULTIMATE_DAMAGE,
+        ULTIMATE_HEALTH = excluded.ULTIMATE_HEALTH,
+        BUFFS = excluded.BUFFS,
+        LEVEL = excluded.LEVEL
+    `).run(chipId, HP, ATK, DEF, SP_CHARGE, CRIT_CHANCE, SP_DRAIN, HEALING_POINTS, BULLET_HEALTH, ULTIMATE_DAMAGE, ULTIMATE_HEALTH, BUFFS, LEVEL);
   },
 };
 
