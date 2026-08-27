@@ -69,6 +69,7 @@ db.exec(`
     inventory_id INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
     name         TEXT    NOT NULL,
     rarity       INTEGER NOT NULL,
+    chip_stats_id INTEGER UNIQUE REFERENCES chip_stats(id) ON DELETE CASCADE,
     level        INTEGER NOT NULL DEFAULT 1,
     image        TEXT
   );
@@ -86,8 +87,7 @@ db.exec(`
     BULLET_HEALTH     INTEGER,
     ULTIMATE_DAMAGE     INTEGER,
     ULTIMATE_HEALTH     INTEGER,
-    BUFFS     STRING,
-    LEVEL       INTEGER
+    BUFFS     STRING
   );
 `);
 
