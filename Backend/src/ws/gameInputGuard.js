@@ -87,17 +87,23 @@ class RoomInputGuard {
       const minIntervalMs = Math.floor(1000 / maxRate);
       const elapsed = now - state.lastActionAt[action];
       if (state.lastActionAt[action] > 0 && elapsed < minIntervalMs) {
-        state.violations++;
-        return this._reject('action-rate-limit', state);
+        if (action === 'shoot' || action === 'struggle_push') {
+          action = null;
+        } else {
+          state.violations++;
+          return this._reject('action-rate-limit', state);
+        }
+      } else {
+        state.lastActionAt[action] = now;
       }
-      state.lastActionAt[action] = now;
     }
 
     state.lastInputAt = now;
+    const focus = Boolean(rawInput?.focus);
 
     return {
       accepted: true,
-      input: { dx, dy, action },
+      input: { dx, dy, action, focus },
       meta: {
         suspicious: state.violations > 0,
         violations: state.violations,

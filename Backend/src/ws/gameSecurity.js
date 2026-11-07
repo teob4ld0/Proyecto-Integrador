@@ -1,7 +1,18 @@
 'use strict';
 
 const ROOM_ID_REGEX = /^[0-9a-f-]{36}$/i;
-const ALLOWED_TYPES = new Set(['join-game', 'start-ready', 'ready', 'input']);
+const ALLOWED_TYPES = new Set([
+  'join-game',
+  'start-ready',
+  'ready',
+  'player-loaded',
+  'client-ready',
+  'input',
+  'advance-stage',
+  'restart-stage',
+  'spawn-boss',
+  'start-struggle',
+]);
 const ALLOWED_ACTIONS = new Set(['shoot', 'special', 'wall', 'laser', 'struggle_push']);
 
 function parseAllowedOrigins() {
@@ -14,7 +25,7 @@ function parseAllowedOrigins() {
 function isOriginAllowed(origin, allowedOrigins) {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
-  if (/^http:\/\/localhost(:\d+)?$/i.test(origin)) return true;
+  if (/^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/i.test(origin)) return true;
   if (/^https?:\/\/[a-z0-9-]+\.ngrok(-free)?\.(app|dev|io)$/i.test(origin)) return true;
   return false;
 }
@@ -32,6 +43,18 @@ function validateClientMessage(msg) {
     if (typeof msg.roomId !== 'string' || !ROOM_ID_REGEX.test(msg.roomId)) {
       return { ok: false, reason: 'invalid-room-id' };
     }
+    if (msg.character !== undefined && msg.character !== null && typeof msg.character !== 'string') {
+      return { ok: false, reason: 'invalid-character' };
+    }
+    if (msg.difficulty !== undefined && typeof msg.difficulty !== 'string') {
+      return { ok: false, reason: 'invalid-difficulty' };
+    }
+    if (msg.world !== undefined && (!Number.isInteger(msg.world) || msg.world < 1 || msg.world > 3)) {
+      return { ok: false, reason: 'invalid-world' };
+    }
+    if (msg.stage !== undefined && (!Number.isInteger(msg.stage) || msg.stage < 1 || msg.stage > 3)) {
+      return { ok: false, reason: 'invalid-stage' };
+    }
   }
 
   if (msg.type === 'input') {
@@ -42,6 +65,9 @@ function validateClientMessage(msg) {
       if (typeof msg.action !== 'string' || !ALLOWED_ACTIONS.has(msg.action)) {
         return { ok: false, reason: 'invalid-action' };
       }
+    }
+    if (msg.focus !== undefined && typeof msg.focus !== 'boolean') {
+      return { ok: false, reason: 'invalid-focus' };
     }
     if (msg.seq !== undefined && !Number.isInteger(msg.seq)) {
       return { ok: false, reason: 'invalid-seq' };

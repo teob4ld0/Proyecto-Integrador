@@ -1,9 +1,13 @@
 {
+  "name": "danmakrew-workspace",
   "private": true,
+  "description": "Proyecto Integrador — Danmakrew (NoMercyGames): Backend autoritativo + Frontend unificado React + PixiJS + Web Workers",
   "scripts": {
-    "dev:room": "npm --prefix \"./Jogo bonito/frontend\" run dev:room"
-  },
-  "dependencies": {
-    "redis": "^5.12.1"
+    "dev": "node ./scripts/dev.mjs",
+    "dev:backend": "npm --prefix ./Backend run dev",
+    "dev:frontend": "npm --prefix ./Frontend run dev",
+    "build:frontend": "npm --prefix ./Frontend run build",
+    "typecheck:frontend": "npm --prefix ./Frontend run typecheck",
+    "test:physics": "node ./Backend/scripts/testPhysics.js"
   }
 }

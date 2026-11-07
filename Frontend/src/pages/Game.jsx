@@ -1,370 +1,439 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Application, Graphics, Container } from 'pixi.js';
-import InterpolationWorker from '../workers/interpolation.worker.js?worker';
+import { getIdToken, getStoredUserId } from '../services/api';
+import {
+  GameRuntimeSession,
+  clampLevelPart,
+  readSessionQuery,
+  toDifficulty,
+} from '../game/session/gameRuntimeSession';
+import {
+  createDefaultCompanionSlots,
+  mergeCompanionSnapshot,
+  normalizeRole,
+  roleIcon,
+} from '../game/session/squadState';
+import GameHudHeader from '../game/components/GameHudHeader';
+import GameArenaOverlays from '../game/components/GameArenaOverlays';
+import TouchControlsOverlay from '../game/components/TouchControlsOverlay';
+import FloatingControlsBar from '../game/components/FloatingControlsBar';
+import AdFooter from '../game/components/AdFooter';
+import '../styles/game.css';
 
-const WORLD_WIDTH = 800;
-const WORLD_HEIGHT = 600;
+const SESSION_STORAGE_KEY = 'danma_game_session';
 
-// Player circle colours: self = cyan, others = red variants
-const SELF_COLOR = 0x00ffcc;
-const OTHER_COLORS = [0xff4444, 0xff8800, 0xaa44ff, 0xffdd00];
-
-function getWsUrl() {
-  const base = import.meta.env.VITE_WS_URL || 'ws://localhost:9001';
-  return `${base.replace(/\/$/, '')}/game`;
-}
-
-function makePlayerGraphic(isSelf, colorIndex) {
-  const g = new Graphics();
-  const color = isSelf ? SELF_COLOR : OTHER_COLORS[colorIndex % OTHER_COLORS.length];
-  g.circle(0, 0, 10).fill(color);
-  // Small direction indicator
-  g.rect(0, -10, 3, 10).fill(isSelf ? 0xffffff : 0xffd0d0);
-  return g;
+function readPersistedGameSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Game() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { roomId } = location.state || {};
-  const containerRef = useRef(null);
-  const wsRef        = useRef(null);
-  const phaseRef     = useRef('lobby'); // mirrors `phase` state for use inside closures
-  const [status,       setStatus]       = useState('Conectando…');
-  const [playerCount,  setPlayerCount]  = useState(0);
-  const [phase,        setPhase]        = useState('lobby');
-  const [readyPlayers, setReadyPlayers] = useState([]);  // [{ id, isReady }]
-  const [countdownSec, setCountdownSec] = useState(5);
-  const [isHost,       setIsHost]       = useState(false);
+  const canvasMountRef = useRef(null);
+  const sessionRef = useRef(null);
 
-  // Styles reused by overlays
-  const overlayStyle = {
-    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    background: 'rgba(5,5,16,0.88)', backdropFilter: 'blur(4px)',
+  const launchConfig = useMemo(() => {
+    const persisted = readPersistedGameSession();
+    const query = readSessionQuery(location.search, 'normal');
+    const state = location.state || {};
+    const storedUserId = getStoredUserId();
+
+    const roomId = state.roomId || query.roomId || persisted?.roomId || 'local-room';
+    const userId = state.userId || storedUserId || persisted?.userId || 'player-local-host';
+    const playerCharacters = state.playerCharacters || persisted?.playerCharacters || {};
+    const usernamesById = state.usernamesById || persisted?.usernamesById || {};
+    const roleFromRoster = userId && playerCharacters[userId] ? playerCharacters[userId] : null;
+    const resolvedRole = normalizeRole(state.role || roleFromRoster || persisted?.role || query.classId || 'DPS');
+    const difficulty = toDifficulty(state.difficulty || persisted?.difficulty || query.difficulty, 'normal');
+    const world = clampLevelPart(state.world ?? persisted?.world ?? query.world, 1);
+    const stage = clampLevelPart(state.stage ?? persisted?.stage ?? query.stage, 1);
+    const token = state.token || getIdToken() || query.token || '';
+
+    const payload = {
+      roomId,
+      userId,
+      role: resolvedRole,
+      difficulty,
+      world,
+      stage,
+      playerCharacters,
+      usernamesById,
+      testMode: query.testMode,
+      token,
+    };
+
+    try {
+      sessionStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({
+          roomId,
+          userId,
+          role: resolvedRole,
+          difficulty,
+          world,
+          stage,
+          playerCharacters,
+          usernamesById,
+        })
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+
+    return payload;
+  }, [location.search, location.state]);
+
+  const [selectedClass, setSelectedClass] = useState(launchConfig.role);
+  const selectedClassRef = useRef(launchConfig.role);
+  const [workerMode, setWorkerMode] = useState('connecting');
+  const [workerModeLabel, setWorkerModeLabel] = useState('Iniciando Web Workers...');
+
+  const [playerHp, setPlayerHp] = useState(100);
+  const [playerMaxHp, setPlayerMaxHp] = useState(100);
+  const [playerSp, setPlayerSp] = useState(1000);
+  const [playerMaxSp, setPlayerMaxSp] = useState(1000);
+  const [companionSlots, setCompanionSlots] = useState(() => createDefaultCompanionSlots());
+
+  const [showBossHpBar, setShowBossHpBar] = useState(false);
+  const [bossRemainingStocks, setBossRemainingStocks] = useState(4);
+  const [isBossRefilling, setIsBossRefilling] = useState(false);
+  const [bossDisplayHpPercent, setBossDisplayHpPercent] = useState(100);
+  const [spellcardName, setSpellcardName] = useState('Twilight Non-Spell "Evening Flutter"');
+
+  const [stageBanner, setStageBanner] = useState(null);
+  const [bossWarningActive, setBossWarningActive] = useState(false);
+  const [spellcardBanner, setSpellcardBanner] = useState(null);
+  const [isStageClear, setIsStageClear] = useState(false);
+  const [currentDifficultyLabel, setCurrentDifficultyLabel] = useState(
+    launchConfig.difficulty === 'no_mercy'
+      ? 'No Mercy'
+      : launchConfig.difficulty === 'difficult'
+        ? 'Difficult'
+        : 'Normal'
+  );
+  const [currentWorld, setCurrentWorld] = useState(launchConfig.world);
+  const [currentStage, setCurrentStage] = useState(launchConfig.stage);
+  const [stageClearTitle, setStageClearTitle] = useState('STAGE CLEARED!');
+  const [stageClearSubtext, setStageClearSubtext] = useState('Boss derrotado.');
+  const [canAdvanceStage, setCanAdvanceStage] = useState(false);
+  const [isCampaignComplete, setIsCampaignComplete] = useState(false);
+
+  const [isBeamStruggle, setIsBeamStruggle] = useState(false);
+  const [isStruggleAligning, setIsStruggleAligning] = useState(false);
+  const [struggleProgress, setStruggleProgress] = useState(50);
+  const [struggleTimeLeft, setStruggleTimeLeft] = useState(5.0);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [joystickActive, setJoystickActive] = useState(false);
+  const [joystickStickPos, setJoystickStickPos] = useState({ x: 0, y: 0 });
+  const [touchFiring, setTouchFiring] = useState(false);
+  const [touchFocus, setTouchFocus] = useState(false);
+
+  const touchInputRef = useRef({
+    touchDx: 0,
+    touchDy: 0,
+    touchFiring: false,
+    touchFocus: false,
+  });
+  const joystickBaseRef = useRef({ x: 0, y: 0 });
+
+  const updateSelectedRole = (role) => {
+    selectedClassRef.current = role;
+    setSelectedClass(role);
   };
-  const btnStyle = {
-    padding: '10px 28px', background: '#1e3a5f', color: '#4a9eff',
-    border: '1px solid #4a9eff', borderRadius: '4px', cursor: 'pointer',
-    fontFamily: 'monospace', fontSize: '14px', letterSpacing: '1px',
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch {
+      // ignore fullscreen errors
+    }
   };
-  const sendWs = (msg) => wsRef.current?.send(JSON.stringify(msg));
 
   useEffect(() => {
-    if (!roomId) {
-      navigate('/dashboard', { replace: true });
-      return;
-    }
+    const mountContainer = canvasMountRef.current;
+    if (!mountContainer) return undefined;
 
-    const token = localStorage.getItem('danma_token') || '';
-    let app;
-    let ws;
-    let worker;
-    let inputInterval;
-    let mounted = true;
+    let lastHudSync = 0;
 
-    // playerId → { graphic, colorIndex }
-    const sprites = new Map();
-    // Bullet pool: inactive Graphics objects ready to be reused
-    const bulletPool    = [];
-    const bulletSprites = new Map(); // bulletId → Graphics
-    let bulletContainer;
-    let selfId = null;
-    let colorCounter = 0;
-
-    async function init() {
-      // ── Pixi.js setup ──────────────────────────────────────────────────────
-      app = new Application();
-      await app.init({
-        width: WORLD_WIDTH,
-        height: WORLD_HEIGHT,
-        backgroundColor: 0x0d0d1a,
-        antialias: true,
-        resolution: window.devicePixelRatio || 1,
-        autoDensity: true,
-      });
-
-      if (!mounted) {
-        app.destroy(true, { children: true });
-        return;
-      }
-
-      containerRef.current.appendChild(app.canvas);
-
-      // Draw game field border
-      const field = new Graphics();
-      field.rect(2, 2, WORLD_WIDTH - 4, WORLD_HEIGHT - 4).stroke({ width: 3, color: 0x1e3a5f });
-      // Corner markers
-      [[0, 0], [WORLD_WIDTH, 0], [0, WORLD_HEIGHT], [WORLD_WIDTH, WORLD_HEIGHT]].forEach(([cx, cy]) => {
-        field.circle(cx, cy, 8).fill(0x4a9eff);
-      });
-      app.stage.addChild(field);
-
-      // Dedicated container for bullet sprites (rendered above the field, below players)
-      bulletContainer = new Container();
-      app.stage.addChild(bulletContainer);
-
-      // ── Web Worker ──────────────────────────────────────────────────────────
-      worker = new InterpolationWorker();
-
-      worker.onmessage = (e) => {
-        const { players, bullets } = e.data;
-        const seen = new Set();
-
-        for (const player of players) {
-          seen.add(player.id);
-
-          if (!sprites.has(player.id)) {
-            const isSelf = player.id === selfId;
-            const g = makePlayerGraphic(isSelf, colorCounter++);
-            app.stage.addChild(g);
-            sprites.set(player.id, g);
-          }
-
-          const g = sprites.get(player.id);
-          g.x = player.x;
-          g.y = player.y;
-          g.rotation = player.angle;
+    const session = new GameRuntimeSession({
+      mountContainer,
+      roomId: launchConfig.roomId,
+      userId: launchConfig.userId,
+      classId: launchConfig.role,
+      token: launchConfig.token,
+      difficulty: launchConfig.difficulty,
+      world: launchConfig.world,
+      stage: launchConfig.stage,
+      testMode: launchConfig.testMode,
+      initialRoster: launchConfig.playerCharacters,
+      getSelectedRole: () => selectedClassRef.current,
+      setSelectedRole: (role) => updateSelectedRole(role),
+      getFrameInput: () => touchInputRef.current,
+      onTouchDeviceChange: (touch) => setIsTouchDevice(touch),
+      onFirstTouch: () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.().catch(() => {});
         }
-
-        // Remove sprites for players no longer in the snapshot
-        for (const [id, g] of sprites) {
-          if (!seen.has(id)) {
-            app.stage.removeChild(g);
-            g.destroy();
-            sprites.delete(id);
+      },
+      onOrientationChange: () => {},
+      onFullscreenChange: () => setIsFullscreen(Boolean(document.fullscreenElement)),
+      onToggleFullscreen: toggleFullscreen,
+      onWorkerModeChange: (mode, label) => {
+        setWorkerMode(mode);
+        setWorkerModeLabel(label);
+      },
+      onPlayersSnapshot: (players, myPlayerId) => {
+        const me = players.find((p) => p.id === myPlayerId);
+        if (me?.character) {
+          const norm = normalizeRole(me.character);
+          if (norm !== selectedClassRef.current) {
+            updateSelectedRole(norm);
           }
         }
-
-        if (mounted) setPlayerCount(seen.size);
-
-        // ── Bullet rendering ──────────────────────────────────────────────────
-        const seenBullets = new Set();
-        for (const b of (bullets || [])) {
-          seenBullets.add(b.id);
-          if (!bulletSprites.has(b.id)) {
-            // Reuse pooled graphic or create a new one
-            let g = bulletPool.pop();
-            if (!g) {
-              g = new Graphics();
-              g.circle(0, 0, b.radius).fill(0xff7744);
-              bulletContainer.addChild(g);
-            }
-            g.visible = true;
-            bulletSprites.set(b.id, g);
-          }
-          const g = bulletSprites.get(b.id);
-          g.x = b.x;
-          g.y = b.y;
+        setCompanionSlots((prev) =>
+          mergeCompanionSnapshot(prev, players, myPlayerId, launchConfig.usernamesById)
+        );
+      },
+      onEngineFrame: (engine) => {
+        const now = performance.now();
+        // Sync React HUD at ~20Hz so PixiJS WebGL renders at full 60+ FPS with minimal React overhead
+        if (now - lastHudSync < 48 && !engine.isBeamStruggle && !engine.isStageClear) {
+          return;
         }
+        lastHudSync = now;
 
-        // Return bullets no longer in the snapshot to pool
-        for (const [id, g] of bulletSprites) {
-          if (!seenBullets.has(id)) {
-            g.visible = false;
-            bulletSprites.delete(id);
-            bulletPool.push(g);
-          }
-        }
-      };
-
-      // ── WebSocket ───────────────────────────────────────────────────────────
-      ws = new WebSocket(`${getWsUrl()}?token=${encodeURIComponent(token)}`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'join-game', roomId }));
-      };
-
-      ws.onmessage = (e) => {
-        let msg;
-        try { msg = JSON.parse(e.data); } catch { return; }
-
-        switch (msg.type) {
-          case 'joined': {
-            selfId = msg.playerId;
-            if (mounted) {
-              setIsHost(msg.isHost || false);
-              const initPhase = msg.initialState?.phase || 'lobby';
-              phaseRef.current = initPhase;
-              setPhase(initPhase);
-              setStatus(initPhase === 'playing' ? 'Jugando' : 'En sala');
-              if (msg.initialState?.players) {
-                setReadyPlayers(msg.initialState.players.map(p => ({ id: p.id, isReady: p.isReady || false })));
-              }
-            }
-            worker.postMessage({ type: 'snapshot', data: msg.initialState });
-            break;
-          }
-          case 'snapshot': {
-            if (mounted && msg.phase === 'countdown' && msg.countdownMs !== undefined) {
-              setCountdownSec(Math.max(1, Math.ceil(msg.countdownMs / 1000)));
-            }
-            worker.postMessage({ type: 'snapshot', data: msg });
-            break;
-          }
-          case 'phase': {
-            if (!mounted) break;
-            const { phase: newPhase, countdownMs, players } = msg;
-            phaseRef.current = newPhase;
-            setPhase(newPhase);
-            if (newPhase === 'playing')    setStatus('Jugando');
-            else if (newPhase === 'lobby') setStatus('En sala');
-            else if (newPhase === 'countdown') {
-              setCountdownSec(Math.ceil((countdownMs || 5000) / 1000));
-            }
-            if (players) setReadyPlayers(players);
-            break;
-          }
-          case 'ready-status': {
-            if (mounted && msg.players) setReadyPlayers(msg.players);
-            break;
-          }
-          case 'player-joined': {
-            // Reflected in next snapshot's player list
-            break;
-          }
-          case 'hit': {
-            // Flash the hit player sprite briefly (placeholder damage feedback)
-            const hitSprite = sprites.get(msg.playerId);
-            if (hitSprite) {
-              hitSprite.tint = 0xff2222;
-              setTimeout(() => { if (hitSprite) hitSprite.tint = 0xffffff; }, 150);
-            }
-            break;
-          }
-          case 'player-left':
-          case 'player-disconnected': {
-            const g = sprites.get(msg.playerId);
-            if (g) {
-              // Dim the sprite on disconnect, remove on leave
-              if (msg.type === 'player-left') {
-                app.stage.removeChild(g);
-                g.destroy();
-                sprites.delete(msg.playerId);
-              } else {
-                g.alpha = 0.3;
-              }
-            }
-            break;
-          }
-          case 'error':
-            console.warn('[Game] Server error:', msg.message);
-            break;
-        }
-      };
-
-      ws.onerror = () => { if (mounted) setStatus('Error de conexión'); };
-      ws.onclose = () => { if (mounted) setStatus('Desconectado'); };
-
-      // ── Input loop ──────────────────────────────────────────────────────────
-      const keys = new Set();
-      const onKeyDown = (e) => { keys.add(e.code); };
-      const onKeyUp = (e) => { keys.delete(e.code); };
-      window.addEventListener('keydown', onKeyDown);
-      window.addEventListener('keyup', onKeyUp);
-
-      inputInterval = setInterval(() => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (phaseRef.current !== 'playing') return; // block inputs during pre-game phases
-        let dx = 0;
-        let dy = 0;
-        if (keys.has('ArrowLeft') || keys.has('KeyA')) dx -= 1;
-        if (keys.has('ArrowRight') || keys.has('KeyD')) dx += 1;
-        if (keys.has('ArrowUp') || keys.has('KeyW')) dy -= 1;
-        if (keys.has('ArrowDown') || keys.has('KeyS')) dy += 1;
-        const action = keys.has('Space') ? 'shoot' : null;
-        ws.send(JSON.stringify({ type: 'input', dx, dy, action }));
-      }, 1000 / 60);
-
-      // Store for cleanup
-      app._removeKeys = () => {
-        window.removeEventListener('keydown', onKeyDown);
-        window.removeEventListener('keyup', onKeyUp);
-      };
-    }
-
-    init().catch((err) => {
-      console.error('[Game] Init error', err);
-      if (mounted) setStatus('Error al iniciar');
+        setPlayerHp(engine.playerHp);
+        setPlayerMaxHp(engine.playerMaxHp);
+        setPlayerSp(engine.playerSp);
+        setPlayerMaxSp(engine.playerMaxSp);
+        setBossRemainingStocks(engine.remainingStocks);
+        setIsBossRefilling(engine.isRefillingHp);
+        setBossDisplayHpPercent(engine.displayHpPercent);
+        setSpellcardName(engine.spellcardName);
+        setShowBossHpBar(engine.showBossHpBar);
+        setStageBanner(
+          engine.stageBanner ? { text: engine.stageBanner.text, subtext: engine.stageBanner.subtext } : null
+        );
+        setBossWarningActive(engine.bossWarningActive);
+        setSpellcardBanner(
+          engine.spellcardBanner.active ? { active: true, name: engine.spellcardBanner.name } : null
+        );
+        setIsStageClear(engine.isStageClear);
+        setCurrentDifficultyLabel(engine.currentDifficultyLabel);
+        setCurrentWorld(engine.currentWorld);
+        setCurrentStage(engine.currentStage);
+        setStageClearTitle(engine.stageClearTitle);
+        setStageClearSubtext(engine.stageClearSubtext);
+        setCanAdvanceStage(engine.canAdvanceStage);
+        setIsCampaignComplete(engine.isCampaignComplete);
+        setIsBeamStruggle(engine.isBeamStruggle);
+        setIsStruggleAligning(engine.isStruggleAligning);
+        setStruggleProgress(engine.struggleProgress);
+        setStruggleTimeLeft(engine.struggleTimeLeft);
+      },
     });
 
+    sessionRef.current = session;
+    session.start();
+
     return () => {
-      mounted = false;
-      clearInterval(inputInterval);
-      app?._removeKeys?.();
-      ws?.close();
-      worker?.terminate();
-      app?.destroy(true, { children: true });
+      session.stop();
+      sessionRef.current = null;
     };
-  }, [roomId, navigate]);
+  }, [launchConfig]);
+
+  const updateJoystickVector = (clientX, clientY, centerX, centerY, maxRadius) => {
+    const rawDx = clientX - centerX;
+    const rawDy = clientY - centerY;
+    const dist = Math.hypot(rawDx, rawDy);
+    const clampedRadius = Math.min(dist, maxRadius);
+    const angle = Math.atan2(rawDy, rawDx);
+
+    setJoystickStickPos({
+      x: Math.cos(angle) * clampedRadius,
+      y: Math.sin(angle) * clampedRadius,
+    });
+
+    const deadzone = 0.08;
+    const normalizedDist = Math.min(1, dist / maxRadius);
+    if (normalizedDist > deadzone) {
+      const factor = (normalizedDist - deadzone) / (1 - deadzone);
+      touchInputRef.current.touchDx = Math.cos(angle) * factor;
+      touchInputRef.current.touchDy = Math.sin(angle) * factor;
+    } else {
+      touchInputRef.current.touchDx = 0;
+      touchInputRef.current.touchDy = 0;
+    }
+  };
+
+  const handleJoystickStart = (e) => {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    joystickBaseRef.current = { x: centerX, y: centerY };
+    setJoystickActive(true);
+    updateJoystickVector(touch.clientX, touch.clientY, centerX, centerY, rect.width / 2);
+  };
+
+  const handleJoystickMove = (e) => {
+    e.preventDefault();
+    if (!joystickActive) return;
+    const touch = e.changedTouches[0];
+    updateJoystickVector(
+      touch.clientX,
+      touch.clientY,
+      joystickBaseRef.current.x,
+      joystickBaseRef.current.y,
+      42
+    );
+  };
+
+  const handleJoystickEnd = (e) => {
+    e.preventDefault();
+    setJoystickActive(false);
+    setJoystickStickPos({ x: 0, y: 0 });
+    touchInputRef.current.touchDx = 0;
+    touchInputRef.current.touchDy = 0;
+  };
+
+  const handleToggleTouchFocus = () => {
+    setTouchFocus((prev) => {
+      const next = !prev;
+      touchInputRef.current.touchFocus = next;
+      return next;
+    });
+  };
+
+  const handleSetTouchFiring = (firing) => {
+    setTouchFiring(firing);
+    touchInputRef.current.touchFiring = firing;
+  };
+
+  const handleStageClearAction = () => {
+    const session = sessionRef.current;
+    if (!session) return;
+    if (canAdvanceStage) {
+      session.goToNextStage();
+    } else {
+      session.restartStage();
+    }
+  };
+
+  const handleExitLobby = () => {
+    navigate('/join');
+  };
+
+  const playerHpPercent = Math.max(0, Math.min(100, (playerHp / (playerMaxHp || 100)) * 100));
+  const playerSpPercent = Math.max(0, Math.min(100, (playerSp / (playerMaxSp || 1000)) * 100));
+  const minSkillThreshold =
+    selectedClass === 'Tank' ? 25 : selectedClass === 'DPS' ? 35 : selectedClass === 'Support' ? 40 : 50;
+  const isUltiReady = playerSpPercent >= minSkillThreshold;
+  const playerAvatarSrc = roleIcon(selectedClass);
+  const isLocalWorkerMode = workerMode === 'local-worker';
+
+  const stageClearMetaText = `Dificultad: ${currentDifficultyLabel} | Mundo ${currentWorld} | Stage ${currentStage}`;
+  const stageClearButtonText = canAdvanceStage
+    ? '▶ SIGUIENTE STAGE'
+    : isCampaignComplete
+      ? '🏆 REINICIAR CAMPAÑA'
+      : '🔄 JUGAR OTRA VEZ (REPLAY)';
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'center', minHeight: '100vh', background: '#050510', gap: '12px',
-    }}>
-      <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#4a9eff' }}>
-        {phase === 'playing'
-          ? `${playerCount} jugador${playerCount !== 1 ? 'es' : ''} — WASD/flechas mover, Espacio disparar`
-          : status}
-      </div>
+    <div className="dk-game-viewport" role="application" aria-label="Danmakrew Arena de Combate">
+      <div className="dk-main-layout-container">
+        <GameHudHeader
+          selectedClass={selectedClass}
+          playerAvatarSrc={playerAvatarSrc}
+          playerHpPercent={playerHpPercent}
+          playerSpPercent={playerSpPercent}
+          isUltiReady={isUltiReady}
+          companionSlots={companionSlots}
+          showBossHpBar={showBossHpBar}
+          bossRemainingStocks={bossRemainingStocks}
+          spellcardName={spellcardName}
+          isBossRefilling={isBossRefilling}
+          bossDisplayHpPercent={bossDisplayHpPercent}
+          workerModeLabel={workerModeLabel}
+          difficultyLabel={currentDifficultyLabel}
+          world={currentWorld}
+          stage={currentStage}
+          onExitLobby={handleExitLobby}
+        />
 
-      <div style={{ position: 'relative' }}>
-        <div ref={containerRef} style={{ border: '2px solid #1e3a5f', borderRadius: '2px' }} />
+        <main className="dk-combat-arena-wrapper">
+          <div className="dk-arena-frame-rail" />
 
-        {/* Lobby overlay */}
-        {phase === 'lobby' && (
-          <div style={overlayStyle}>
-            <h2 style={{ color: '#4a9eff', margin: '0 0 12px', fontFamily: 'monospace' }}>En espera…</h2>
-            <p style={{ color: '#aaa', margin: '0 0 24px', fontFamily: 'monospace' }}>
-              {playerCount} jugador{playerCount !== 1 ? 'es' : ''} conectado{playerCount !== 1 ? 's' : ''}
-            </p>
-            {isHost ? (
-              <button style={btnStyle} onClick={() => sendWs({ type: 'start-ready' })}>
-                Iniciar ready check
-              </button>
-            ) : (
-              <p style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
-                Esperando al host…
-              </p>
+          <div className="dk-canvas-container">
+            <div ref={canvasMountRef} className="dk-pixi-mount" />
+
+            <GameArenaOverlays
+              stageBanner={stageBanner}
+              bossWarningActive={bossWarningActive}
+              spellcardBanner={spellcardBanner}
+              isStruggleAligning={isStruggleAligning}
+              isBeamStruggle={isBeamStruggle}
+              struggleProgress={struggleProgress}
+              struggleTimeLeft={struggleTimeLeft}
+              isTouchDevice={isTouchDevice}
+              isStageClear={isStageClear}
+              isPlayerDefeated={playerHp <= 0}
+              stageClearTitle={stageClearTitle}
+              stageClearSubtext={stageClearSubtext}
+              stageClearMeta={stageClearMetaText}
+              stageClearButtonText={stageClearButtonText}
+              onPushStruggle={() => sessionRef.current?.pushStruggle()}
+              onRestartStage={handleStageClearAction}
+              onExitLobby={handleExitLobby}
+            />
+
+            {isTouchDevice && (
+              <TouchControlsOverlay
+                joystickActive={joystickActive}
+                joystickStickPos={joystickStickPos}
+                touchFocus={touchFocus}
+                touchFiring={touchFiring}
+                onJoystickStart={handleJoystickStart}
+                onJoystickMove={handleJoystickMove}
+                onJoystickEnd={handleJoystickEnd}
+                onTriggerSkill={() => sessionRef.current?.triggerSkill()}
+                onToggleFocus={handleToggleTouchFocus}
+                onFireStart={() => handleSetTouchFiring(true)}
+                onFireEnd={() => handleSetTouchFiring(false)}
+              />
             )}
           </div>
-        )}
 
-        {/* Ready overlay */}
-        {phase === 'ready' && (
-          <div style={overlayStyle}>
-            <h2 style={{ color: '#4a9eff', margin: '0 0 20px', fontFamily: 'monospace' }}>¿Listos?</h2>
-            <div style={{ marginBottom: '24px' }}>
-              {readyPlayers.map(p => (
-                <div key={p.id} style={{
-                  color: p.isReady ? '#00ffcc' : '#ff4444',
-                  fontFamily: 'monospace', marginBottom: '6px', fontSize: '13px',
-                }}>
-                  {p.isReady ? '✓' : '○'} {p.id.slice(0, 10)}…
-                </div>
-              ))}
-            </div>
-            <button style={btnStyle} onClick={() => sendWs({ type: 'ready' })}>
-              ¡Listo!
-            </button>
-          </div>
-        )}
+          <div className="dk-arena-frame-rail" />
+        </main>
 
-        {/* Countdown overlay */}
-        {phase === 'countdown' && (
-          <div style={overlayStyle}>
-            <div style={{
-              fontSize: '120px', fontWeight: 'bold', color: '#fff',
-              fontFamily: 'monospace', lineHeight: 1,
-              textShadow: '0 0 40px #4a9eff, 0 0 80px #4a9eff',
-            }}>
-              {countdownSec}
-            </div>
-          </div>
-        )}
+        <AdFooter />
+
+        <FloatingControlsBar
+          selectedClass={selectedClass}
+          isFullscreen={isFullscreen}
+          canSwitchRole={isLocalWorkerMode}
+          showDebugActions={true}
+          onSelectRole={(role) => sessionRef.current?.selectRole(role)}
+          onTriggerSkill={() => sessionRef.current?.triggerSkill()}
+          onSpawnBoss={() => sessionRef.current?.spawnBossNow()}
+          onStartStruggle={() => sessionRef.current?.startBeamStruggleTest()}
+          onToggleFullscreen={toggleFullscreen}
+        />
       </div>
     </div>
   );

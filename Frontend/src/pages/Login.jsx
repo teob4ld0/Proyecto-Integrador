@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { loginUser, resendVerificationEmail, setIdToken } from '../services/api'
+import { loginUser, resendVerificationEmail, setIdToken, setStoredUserId } from '../services/api'
 import BulletBackground from '../components/BulletBackground'
 
 export default function Login() {
@@ -50,6 +50,9 @@ export default function Login() {
       const data = await loginUser(form)
       if (data.token) {
         setIdToken(data.token)
+      }
+      if (data.userId) {
+        setStoredUserId(data.userId)
       }
       navigate('/dashboard')
     } catch (err) {

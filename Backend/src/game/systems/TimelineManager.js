@@ -39,7 +39,7 @@ class TimelineManager {
 
     this.loadScript([
       {
-        time: 0.5,
+        time: 0.1,
         action: 'stage_banner',
         payload: { text: bannerText, subtext: bannerSubtext },
       },

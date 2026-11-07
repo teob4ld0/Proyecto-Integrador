@@ -9,17 +9,30 @@ function normalizeDifficulty(raw) {
   return 'normal';
 }
 
+function clampIndex(oneBased, max) {
+  const num = Number(oneBased);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(max - 1, Math.floor(num) - 1));
+}
+
 /**
  * Manages campaign progression for a game room.
  * Tracks difficulty, current world/stage, and stage clear state.
  */
 class CampaignManager {
-  constructor(rawDifficulty) {
+  constructor(rawDifficulty, initialWorld = 1, initialStage = 1) {
     this.difficulty = normalizeDifficulty(rawDifficulty);
-    this.worldIndex = 0;
-    this.stageIndex = 0;
+    this.worldIndex = clampIndex(initialWorld, WORLDS_PER_DIFFICULTY);
+    this.stageIndex = clampIndex(initialStage, STAGES_PER_WORLD);
     this.campaignComplete = false;
     this.stageState = 'intro'; // 'intro' | 'waves' | 'boss_warning' | 'boss_battle' | 'stage_clear'
+  }
+
+  setLevel(world = 1, stage = 1) {
+    this.worldIndex = clampIndex(world, WORLDS_PER_DIFFICULTY);
+    this.stageIndex = clampIndex(stage, STAGES_PER_WORLD);
+    this.campaignComplete = false;
+    this.stageState = 'intro';
   }
 
   getStageConfig() {

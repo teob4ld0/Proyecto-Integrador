@@ -9,6 +9,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+      },
       manifest: {
         name: 'Danmakrew',
         short_name: 'Danma',
@@ -30,6 +33,7 @@ export default defineConfig({
     }),
   ],
   server: {
+    host: '0.0.0.0',
     port: 3000,
     allowedHosts: true,
     proxy: {

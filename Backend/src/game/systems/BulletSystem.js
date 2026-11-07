@@ -94,7 +94,8 @@ class BulletSystem {
 
         const dx = b.x - pos.x;
         const dy = b.y - pos.y;
-        const minDist = PLAYER_RADIUS + b.radius;
+        const hitboxRadius = player.input?.focus ? 5 : PLAYER_RADIUS;
+        const minDist = hitboxRadius + b.radius;
         if (dx * dx + dy * dy <= minDist * minDist) {
           hits.push({ playerId, bulletId: b.id, ownerId: b.ownerId, damage: b.damage || 5 });
           toKill.add(b);
@@ -111,6 +112,32 @@ class BulletSystem {
     }
 
     return hits;
+  }
+
+  /**
+   * Remove and release all active bullets owned by `ownerId`.
+   */
+  clearByOwner(ownerId) {
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const b = this.active[i];
+      if (b.ownerId === ownerId) {
+        this.hash.remove(b);
+        releaseBullet(b);
+        this.active.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Remove and release all active bullets.
+   */
+  clear() {
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const b = this.active[i];
+      this.hash.remove(b);
+      releaseBullet(b);
+    }
+    this.active.length = 0;
   }
 
   /**

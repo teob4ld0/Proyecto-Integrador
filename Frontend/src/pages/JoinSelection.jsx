@@ -1,13 +1,38 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { joinRoomByCode } from '../services/api';
+import { createRoom, joinRoomByCode } from '../services/api';
 
 export default function JoinSelection() {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState('');
+  const [loadingCreate, setLoadingCreate] = useState(false);
   const [loadingCodeJoin, setLoadingCodeJoin] = useState(false);
   const [error, setError] = useState('');
+
+  const handleCreateRoom = async () => {
+    setLoadingCreate(true);
+    setError('');
+    try {
+      const room = await createRoom({
+        name: 'NO MERCY LOBBY',
+        map: 'classic',
+        maxPlayers: 4,
+        isPublic: true,
+      });
+      navigate('/character-selection', {
+        state: {
+          roomId: room.id,
+          isHost: true,
+          alreadyJoined: true,
+        },
+      });
+    } catch (err) {
+      setError(err.message || 'No se pudo crear la sala.');
+    } finally {
+      setLoadingCreate(false);
+    }
+  };
 
   const handleJoinByCode = async () => {
     const normalized = roomCode.trim().toUpperCase();
@@ -66,9 +91,10 @@ export default function JoinSelection() {
         <div className="menu-row">
           <button 
             className="menu-btn" 
-            onClick={() => navigate('/character-selection', { state: { isHost: true } })} 
+            onClick={handleCreateRoom}
+            disabled={loadingCreate}
           >
-            CREATE
+            {loadingCreate ? 'CREATING...' : 'CREATE'}
           </button>
 
           <button 
