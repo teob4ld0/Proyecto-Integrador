@@ -163,6 +163,20 @@ export default function Login() {
           >
             {resending ? 'Reenviando...' : 'Reenviar correo de verificación'}
           </button>
+
+          <button
+            type="button"
+            className="btn-login-submit"
+            onClick={() => navigate('/character-selection', { state: { roomId: 'demo-room-01', isHost: true, alreadyJoined: true } })}
+            style={{
+              marginTop: '1.2rem',
+              borderColor: '#00f0ff',
+              color: '#00f0ff',
+              background: 'rgba(0, 240, 255, 0.12)',
+            }}
+          >
+            ⚡ JUGAR OFFLINE (SELECCIÓN DE PERSONAJES)
+          </button>
         </form>
 
         <div className="auth-link">

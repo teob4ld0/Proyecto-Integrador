@@ -1,5 +1,6 @@
 import type { GameSnapshot } from '../network/wsClient';
 import type { Difficulty, PlayerRole } from './gameRuntimeSession';
+import { getCachedLutProfile } from '../engine/SpriteLutCache';
 
 export class GameWorkerBridge {
   private worker: Worker | null = null;
@@ -36,6 +37,9 @@ export class GameWorkerBridge {
           }
         };
 
+        const cal = getCachedLutProfile();
+        const stageProfile = cal && difficulty === cal.id ? cal.level : null;
+
         this.worker.postMessage({
           type: 'INIT',
           payload: {
@@ -45,6 +49,7 @@ export class GameWorkerBridge {
             difficulty,
             world,
             stage,
+            stageProfile,
           },
         });
       } catch (err) {

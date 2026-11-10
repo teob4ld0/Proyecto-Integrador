@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:select": "vite --open /character-selection",
+    "dev:sandbox": "vite --open /sandbox",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

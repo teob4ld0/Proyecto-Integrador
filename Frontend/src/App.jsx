@@ -53,6 +53,11 @@ function App() {
         <Route path="/lobby-browser" element={<ProtectedRoute><LobbyBrowser /></ProtectedRoute>} />
         <Route path="/game" element={<ProtectedRoute><Game /></ProtectedRoute>} />
         
+        {/* Rutas directas para desarrollo / pruebas rápidas de niveles (sin backend ni login) */}
+        <Route path="/sandbox" element={<Game isDevMode={true} />} />
+        <Route path="/dev" element={<Game isDevMode={true} />} />
+        <Route path="/test" element={<Game isDevMode={true} />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

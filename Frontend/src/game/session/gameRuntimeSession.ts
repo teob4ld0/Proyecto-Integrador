@@ -2,9 +2,10 @@ import { GameEngine } from '../engine/GameEngine';
 import { GameWSClient, type GameSnapshot, type ServerPlayer } from '../network/wsClient';
 import { GameWorkerBridge } from './GameWorkerBridge';
 import { normalizeRole } from './squadState';
+import { getCachedLutProfile } from '../engine/SpriteLutCache';
 
 export type PlayerRole = 'Tank' | 'Support' | 'DPS' | 'Special_Attack';
-export type Difficulty = 'normal' | 'difficult' | 'no_mercy';
+export type Difficulty = 'normal' | 'difficult' | 'no_mercy' | string;
 export type WorkerRuntimeMode = 'connecting' | 'backend-worker' | 'local-worker';
 
 export type SessionQuery = {
@@ -51,6 +52,8 @@ export type RuntimeSessionOptions = {
 const UUID_REGEX = /^[0-9a-f-]{36}$/i;
 
 export function toDifficulty(value: string | null | undefined, fallback: Difficulty = 'normal'): Difficulty {
+  const cal = getCachedLutProfile();
+  if (typeof value === 'string' && cal?.id && value === cal.id) return value;
   if (value === 'difficult' || value === 'no_mercy' || value === 'normal') return value;
   return fallback;
 }
@@ -72,7 +75,7 @@ export function readSessionQuery(search: string, defaultDifficulty: Difficulty =
       : '';
   return {
     roomId: searchParams.get('roomId') || searchParams.get('room') || '',
-    classId: searchParams.get('class') || searchParams.get('character') || 'DPS',
+    classId: searchParams.get('class') || searchParams.get('character') || searchParams.get('role') || 'Special_Attack',
     token: searchParams.get('token') || storedToken,
     difficulty: toDifficulty(searchParams.get('difficulty'), defaultDifficulty),
     world: clampLevelPart(searchParams.get('world'), 1),
@@ -119,6 +122,8 @@ export class GameRuntimeSession {
       if (e.code === 'Digit2') this.selectRole('Tank');
       if (e.code === 'Digit3') this.selectRole('Support');
       if (e.code === 'Digit4') this.selectRole('Special_Attack');
+      if (e.code === 'KeyR' && !e.repeat) this.restartStage();
+      if (e.code === 'KeyN' && !e.repeat) this.goToNextStage();
     }
 
     if (e.code === 'KeyT' && !e.repeat) this.startBeamStruggleTest();
@@ -179,7 +184,11 @@ export class GameRuntimeSession {
     }
 
     // 2. Connect to Authoritative Backend WS if valid room UUID + token, with automatic Local Physics Worker fallback
-    const canUseBackendWs = Boolean(this.options.token && this.options.roomId && UUID_REGEX.test(this.options.roomId));
+    const calProfile = getCachedLutProfile();
+    const isCustomCalStage = Boolean(calProfile?.id && this.options.difficulty === calProfile.id);
+    const canUseBackendWs = Boolean(
+      !isCustomCalStage && this.options.token && this.options.roomId && UUID_REGEX.test(this.options.roomId)
+    );
 
     if (canUseBackendWs) {
       this.setMode('connecting', 'Sincronizando sala multijugador...');
@@ -418,6 +427,11 @@ export class GameRuntimeSession {
   };
 
   private handleIncomingSnapshot(snapshot: GameSnapshot): void {
+    if (this.runtimeMode === 'local-worker') {
+      // En modo local (Web Worker), aplicar directo sin el buffer artificial de delay de red (0ms lag)
+      this.applySnapshot(snapshot);
+      return;
+    }
     if (this.snapshotWorker) {
       this.snapshotWorker.postMessage({ type: 'ADD_SNAPSHOT', payload: snapshot });
     } else {

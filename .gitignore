@@ -21,8 +21,12 @@ Frontend/dist-ssr/
 Backend/data/
 
 # ========================
-# Archivos sensibles y Entorno
+# Archivos de datos y pruebas locales
 # ========================
+*.local.json
+specialHellData.json
+*specialHell*
+
 .env
 .env.*
 !.env.example

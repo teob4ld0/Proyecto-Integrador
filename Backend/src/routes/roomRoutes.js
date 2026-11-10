@@ -31,7 +31,7 @@ const createRoomSchema = z.object({
   maxPlayers: z.number().int().min(1).max(4).default(4),
   password: z.string().max(64).optional(),
   isPublic: z.boolean().default(true),
-  difficulty: z.enum(['normal', 'difficult', 'no_mercy']).default('normal'),
+  difficulty: z.string().min(3).max(20).trim().default('normal'),
   world: z.number().int().min(1).max(3).default(1),
   stage: z.number().int().min(1).max(3).default(1),
 });
@@ -41,7 +41,7 @@ const updateRoomSchema = z
     name: z.string().min(3).max(30).trim().optional(),
     map: z.string().trim().optional(),
     isPublic: z.boolean().optional(),
-    difficulty: z.enum(['normal', 'difficult', 'no_mercy']).optional(),
+    difficulty: z.string().min(3).max(20).trim().optional(),
     world: z.number().int().min(1).max(3).optional(),
     stage: z.number().int().min(1).max(3).optional(),
   })

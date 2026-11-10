@@ -46,6 +46,23 @@ export default function Home() {
           </button>
         </div>
 
+        {/* Acceso directo a Selección de Personajes (Modo Offline / Prueba) */}
+        <div className="menu-row">
+          <button 
+            className="menu-btn" 
+            style={{
+              width: '100%',
+              borderColor: '#00f0ff',
+              color: '#00f0ff',
+              background: 'rgba(0, 240, 255, 0.08)',
+              fontSize: '0.82rem',
+            }}
+            onClick={() => navigate('/character-selection', { state: { roomId: 'demo-room-01', isHost: true, alreadyJoined: true } })}
+          >
+            ⚡ SELECCIÓN DE PERSONAJES (OFFLINE)
+          </button>
+        </div>
+
         {/* Fila inferior (GTFO) */}
         <div className="menu-row">
           <button 

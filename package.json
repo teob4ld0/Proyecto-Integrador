@@ -4,6 +4,8 @@
   "description": "Proyecto Integrador — Danmakrew (NoMercyGames): Backend autoritativo + Frontend unificado React + PixiJS + Web Workers",
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
+    "dev:select": "npm --prefix ./Frontend run dev:select",
+    "dev:sandbox": "npm --prefix ./Frontend run dev:sandbox",
     "dev:backend": "npm --prefix ./Backend run dev",
     "dev:frontend": "npm --prefix ./Frontend run dev",
     "build:frontend": "npm --prefix ./Frontend run build",

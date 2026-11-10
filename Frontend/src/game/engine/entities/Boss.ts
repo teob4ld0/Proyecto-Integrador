@@ -11,11 +11,11 @@ export interface BossPhaseDef {
 }
 
 export const BOSS_PHASES: BossPhaseDef[] = [
-  { phase: 1, name: 'Twilight Non-Spell "Evening Flutter"', isSpellCard: false, maxHp: 110 },
-  { phase: 2, name: 'Moon Sign "Moonlight Ray"', isSpellCard: true, maxHp: 140 },
-  { phase: 3, name: 'Night Non-Spell "Midnight Petal Barrage"', isSpellCard: false, maxHp: 130 },
-  { phase: 4, name: 'Night Sign "Midnight Gaster Cage"', isSpellCard: true, maxHp: 160 },
-  { phase: 5, name: 'Darkness Sign "Demarcation of the Dark Forest"', isSpellCard: true, maxHp: 200 },
+  { phase: 1, name: 'Phase 1 "Vanguard Barrage"', isSpellCard: false, maxHp: 110 },
+  { phase: 2, name: 'Core Surge "Crimson Vortex"', isSpellCard: true, maxHp: 140 },
+  { phase: 3, name: 'Phase 3 "Crossfire Storm"', isSpellCard: false, maxHp: 130 },
+  { phase: 4, name: 'Overload Protocol "Prism Cage"', isSpellCard: true, maxHp: 160 },
+  { phase: 5, name: 'Final Protocol "Eclipse Ray"', isSpellCard: true, maxHp: 200 },
 ];
 
 export class Boss {

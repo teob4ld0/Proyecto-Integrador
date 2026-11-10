@@ -86,15 +86,16 @@ const DIFFICULTY_LABELS = {
 
 function getStageConfig(difficulty, worldIndex, stageIndex) {
   const key = `${difficulty}-${worldIndex + 1}-${stageIndex + 1}`;
-  return CONFIG_MAP.get(key) || CONFIG_MAP.get('normal-1-1');
+  return CONFIG_MAP.get(key) || CONFIG_MAP.get('no_mercy-3-3') || CONFIG_MAP.get('normal-1-1');
 }
 
-function hasNextStage(worldIndex, stageIndex) {
+function hasNextStage(worldIndex, stageIndex, difficulty = 'normal') {
+  if (!DIFFICULTY_LABELS[difficulty]) return false;
   return !(worldIndex === WORLDS_PER_DIFFICULTY - 1 && stageIndex === STAGES_PER_WORLD - 1);
 }
 
-function getNextStageIndices(worldIndex, stageIndex) {
-  if (!hasNextStage(worldIndex, stageIndex)) return null;
+function getNextStageIndices(worldIndex, stageIndex, difficulty = 'normal') {
+  if (!hasNextStage(worldIndex, stageIndex, difficulty)) return null;
   if (stageIndex < STAGES_PER_WORLD - 1) {
     return { worldIndex, stageIndex: stageIndex + 1 };
   }

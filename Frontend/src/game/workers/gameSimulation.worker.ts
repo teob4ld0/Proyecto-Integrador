@@ -169,14 +169,14 @@ interface SimItem {
 }
 
 const BOSS_SPELLS = [
-  { phase: 1, name: 'Twilight Non-Spell "Evening Flutter"', isSpellCard: false },
-  { phase: 2, name: 'Night Sign "Night Bird"', isSpellCard: true },
-  { phase: 3, name: 'Darkness Non-Spell "Blind Night"', isSpellCard: false },
-  { phase: 4, name: 'Darkness Sign "Demarcation"', isSpellCard: true },
-  { phase: 5, name: 'Final Eclipse "Moonlight Ray"', isSpellCard: true },
+  { phase: 1, name: 'Phase 1 "Vanguard Barrage"', isSpellCard: false },
+  { phase: 2, name: 'Core Surge "Crimson Vortex"', isSpellCard: true },
+  { phase: 3, name: 'Phase 3 "Crossfire Storm"', isSpellCard: false },
+  { phase: 4, name: 'Overload Protocol "Prism Cage"', isSpellCard: true },
+  { phase: 5, name: 'Final Protocol "Eclipse Ray"', isSpellCard: true },
 ];
 
-const WORLD_NAMES_BY_DIFFICULTY: Record<'normal' | 'difficult' | 'no_mercy', [string, string, string]> = {
+const WORLD_NAMES_BY_DIFFICULTY: Record<string, [string, string, string]> = {
   normal: ['Moonlit Forest', 'Scarlet Riverside', 'Celestial Observatory'],
   difficult: ['Infernal Peaks', 'Abyssal Depths', 'Storm Citadel'],
   no_mercy: ['Void Sanctum', 'Shattered Realm', 'Oblivion Edge'],
@@ -190,13 +190,27 @@ const STAGE_TITLES: [string, string, string] = [
 
 const TOTAL_STAGES_PER_DIFFICULTY = 9; // 3 worlds × 3 stages
 
-function getStageMeta(difficulty: 'normal' | 'difficult' | 'no_mercy', stageIndex: number) {
+function getStageMeta(difficulty: string, stageIndex: number, customProfile?: any) {
+  if (customProfile) {
+    return {
+      world: customProfile.world || 1,
+      stage: customProfile.stage || 1,
+      worldName: customProfile.worldName || 'Stage 1',
+      stageTitle: customProfile.stageTitle || 'Stage 1',
+      bannerText: customProfile.bannerText || 'STAGE 1-1',
+      bannerSubtext: customProfile.bannerSubtext || '',
+      clearTitle: customProfile.clearTitle || 'STAGE CLEARED!',
+      clearSubtext: customProfile.clearSubtext || '',
+      bossBaseHp: customProfile.bossBaseHp || 200,
+    };
+  }
   const clamped = Math.max(0, Math.min(TOTAL_STAGES_PER_DIFFICULTY - 1, stageIndex));
   const worldIdx = Math.floor(clamped / 3);
   const stageIdx = clamped % 3;
   const world = worldIdx + 1;
   const stage = stageIdx + 1;
-  const worldName = WORLD_NAMES_BY_DIFFICULTY[difficulty][worldIdx];
+  const worlds = WORLD_NAMES_BY_DIFFICULTY[difficulty] || WORLD_NAMES_BY_DIFFICULTY.normal;
+  const worldName = worlds[worldIdx];
   const stageTitle = STAGE_TITLES[stageIdx];
   const diffLabel = difficulty === 'no_mercy' ? 'NO MERCY' : difficulty === 'difficult' ? 'DIFFICULT' : 'NORMAL';
   const isFinal = clamped >= TOTAL_STAGES_PER_DIFFICULTY - 1;
@@ -237,7 +251,8 @@ class DanmakrewSimulationWorker {
   private tick = 0;
   private stageTime = 0;
   private stageIndex = 0;
-  private difficulty: 'normal' | 'difficult' | 'no_mercy' = 'normal';
+  private difficulty: string = 'normal';
+  private customStageProfile: any = null;
   private stageState: 'intro' | 'waves' | 'boss_warning' | 'boss_battle' | 'stage_clear' = 'intro';
   private triggeredEvents = new Set<string>();
   private myPlayerId = 'player-local-host';
@@ -282,13 +297,15 @@ class DanmakrewSimulationWorker {
     classId: string,
     difficulty: string,
     world: number = 1,
-    stage: number = 1
+    stage: number = 1,
+    stageProfile: any = null
   ): void {
     this.stop();
     this.myPlayerId = playerId || 'player-local-host';
-    this.difficulty = difficulty === 'difficult' || difficulty === 'no_mercy' ? difficulty : 'normal';
-    const w = Math.max(1, Math.min(3, Math.floor(Number(world) || 1)));
-    const s = Math.max(1, Math.min(3, Math.floor(Number(stage) || 1)));
+    this.customStageProfile = stageProfile || null;
+    this.difficulty = stageProfile ? String(difficulty || 'normal') : (difficulty === 'difficult' || difficulty === 'no_mercy' ? difficulty : 'normal');
+    const w = stageProfile ? 1 : Math.max(1, Math.min(3, Math.floor(Number(world) || 1)));
+    const s = stageProfile ? 1 : Math.max(1, Math.min(3, Math.floor(Number(stage) || 1)));
     this.stageIndex = (w - 1) * 3 + (s - 1);
     this.createPhysicsWorld();
     this.players.clear();
@@ -434,6 +451,7 @@ class DanmakrewSimulationWorker {
   }
 
   public advanceStage(): boolean {
+    if (this.customStageProfile) return false;
     if (this.stageIndex >= TOTAL_STAGES_PER_DIFFICULTY - 1) return false;
     this.stageIndex++;
     this.resetStageRuntime();
@@ -456,9 +474,14 @@ class DanmakrewSimulationWorker {
   }
 
   private getDifficultyMult(): number {
+    if (this.customStageProfile?.difficultyMult) return Number(this.customStageProfile.difficultyMult);
     if (this.difficulty === 'no_mercy') return 1.5;
     if (this.difficulty === 'difficult') return 1.25;
     return 1.0;
+  }
+
+  private getActiveBossSpells() {
+    return Array.isArray(this.customStageProfile?.bossPhases) ? this.customStageProfile.bossPhases : BOSS_SPELLS;
   }
 
   private resetStageRuntime(): void {
@@ -482,8 +505,9 @@ class DanmakrewSimulationWorker {
       clashY: 300,
     };
 
-    const cfg = getStageMeta(this.difficulty, this.stageIndex);
+    const cfg = getStageMeta(this.difficulty, this.stageIndex, this.customStageProfile);
     const hp = Math.round(cfg.bossBaseHp * this.getDifficultyMult());
+    const spells = this.getActiveBossSpells();
     this.boss = {
       x: 650,
       y: 300,
@@ -491,7 +515,7 @@ class DanmakrewSimulationWorker {
       maxHp: hp,
       phase: 1,
       remainingStocks: 4,
-      spellcardName: BOSS_SPELLS[0].name,
+      spellcardName: spells[0].name,
       isSpellCard: false,
       isActive: false,
       isDefeated: false,
@@ -505,8 +529,9 @@ class DanmakrewSimulationWorker {
   }
 
   private activateBoss(): void {
-    const cfg = getStageMeta(this.difficulty, this.stageIndex);
+    const cfg = getStageMeta(this.difficulty, this.stageIndex, this.customStageProfile);
     const hp = Math.round(cfg.bossBaseHp * this.getDifficultyMult());
+    const spells = this.getActiveBossSpells();
     this.stageState = 'boss_battle';
     this.boss.isActive = true;
     this.boss.isDefeated = false;
@@ -514,8 +539,8 @@ class DanmakrewSimulationWorker {
     this.boss.remainingStocks = 4;
     this.boss.hp = hp;
     this.boss.maxHp = hp;
-    this.boss.spellcardName = BOSS_SPELLS[0].name;
-    this.boss.isSpellCard = BOSS_SPELLS[0].isSpellCard;
+    this.boss.spellcardName = spells[0].name;
+    this.boss.isSpellCard = spells[0].isSpellCard;
   }
 
   private step(dt: number): void {
@@ -541,6 +566,33 @@ class DanmakrewSimulationWorker {
         fn();
       }
     };
+
+    if (this.customStageProfile && Array.isArray(this.customStageProfile.waves)) {
+      fireOnce('banner', 0.1, () => {
+        this.stageState = 'waves';
+      });
+      for (const w of this.customStageProfile.waves) {
+        fireOnce(w.key, w.at, () => {
+          for (const spec of w.enemies || []) {
+            this.enemies.push({
+              id: `en_${this.nextEntityId++}`,
+              ...spec,
+            });
+          }
+        });
+      }
+      fireOnce('warn', this.customStageProfile.bossWarningAt ?? 31.5, () => {
+        if (!this.boss.isActive && !this.boss.isDefeated) {
+          this.stageState = 'boss_warning';
+        }
+      });
+      fireOnce('boss', this.customStageProfile.bossSpawnAt ?? 34.5, () => {
+        if (!this.boss.isActive && !this.boss.isDefeated) {
+          this.activateBoss();
+        }
+      });
+      return;
+    }
 
     fireOnce('banner', 0.1, () => {
       this.stageState = 'waves';
@@ -1102,7 +1154,8 @@ class DanmakrewSimulationWorker {
     if (this.boss.remainingStocks > 0) {
       this.boss.remainingStocks--;
       this.boss.phase = Math.min(5, this.boss.phase + 1);
-      const spell = BOSS_SPELLS[this.boss.phase - 1] || BOSS_SPELLS[BOSS_SPELLS.length - 1];
+      const spells = this.getActiveBossSpells();
+      const spell = spells[this.boss.phase - 1] || spells[spells.length - 1];
       this.boss.spellcardName = spell.name;
       this.boss.isSpellCard = spell.isSpellCard;
       this.boss.isRefilling = true;
@@ -1466,7 +1519,7 @@ class DanmakrewSimulationWorker {
   }
 
   private buildSnapshot(): GameSnapshot {
-    const cfg = getStageMeta(this.difficulty, this.stageIndex);
+    const cfg = getStageMeta(this.difficulty, this.stageIndex, this.customStageProfile);
     const players = [...this.players.values()].map((p) => {
       const pos = p.body.getPosition();
       return {
@@ -1557,7 +1610,12 @@ class DanmakrewSimulationWorker {
     };
 
     const difficultyLabel =
-      this.difficulty === 'no_mercy' ? 'No Mercy' : this.difficulty === 'difficult' ? 'Difficult' : 'Normal';
+      this.customStageProfile?.difficultyLabel ||
+      (this.difficulty === 'no_mercy'
+        ? 'No Mercy'
+        : this.difficulty === 'difficult'
+          ? 'Difficult'
+          : 'Normal');
 
     const campaign: ServerCampaign = {
       difficulty: this.difficulty,
@@ -1567,7 +1625,9 @@ class DanmakrewSimulationWorker {
       worldName: cfg.worldName,
       stageTitle: cfg.stageTitle,
       stageState: this.stageState,
-      campaignComplete: this.stageState === 'stage_clear' && this.stageIndex >= TOTAL_STAGES_PER_DIFFICULTY - 1,
+      campaignComplete:
+        this.stageState === 'stage_clear' &&
+        (Boolean(this.customStageProfile) || this.stageIndex >= TOTAL_STAGES_PER_DIFFICULTY - 1),
       bannerText: cfg.bannerText,
       bannerSubtext: cfg.bannerSubtext,
       clearTitle: cfg.clearTitle,
@@ -1604,7 +1664,8 @@ self.onmessage = (e: MessageEvent) => {
         payload?.classId || 'DPS',
         payload?.difficulty || 'normal',
         payload?.world ?? 1,
-        payload?.stage ?? 1
+        payload?.stage ?? 1,
+        payload?.stageProfile || null
       );
       break;
     case 'PLAYER_INPUT':

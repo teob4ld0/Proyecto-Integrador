@@ -31,28 +31,37 @@ function readPersistedGameSession() {
   }
 }
 
-export default function Game() {
+export default function Game({ isDevMode = false }) {
   const location = useLocation();
   const navigate = useNavigate();
   const canvasMountRef = useRef(null);
   const sessionRef = useRef(null);
 
+  const isSandboxRoute =
+    isDevMode ||
+    location.pathname === '/sandbox' ||
+    location.pathname === '/dev' ||
+    location.pathname === '/test' ||
+    location.search.includes('sandbox=true') ||
+    location.search.includes('dev=true');
+
   const launchConfig = useMemo(() => {
-    const persisted = readPersistedGameSession();
+    const persisted = isSandboxRoute ? null : readPersistedGameSession();
     const query = readSessionQuery(location.search, 'normal');
     const state = location.state || {};
     const storedUserId = getStoredUserId();
 
-    const roomId = state.roomId || query.roomId || persisted?.roomId || 'local-room';
-    const userId = state.userId || storedUserId || persisted?.userId || 'player-local-host';
+    const roomId = state.roomId || query.roomId || (isSandboxRoute ? 'local-sandbox' : persisted?.roomId) || 'local-room';
+    const userId = state.userId || storedUserId || (isSandboxRoute ? 'dev-player' : persisted?.userId) || 'player-local-host';
     const playerCharacters = state.playerCharacters || persisted?.playerCharacters || {};
     const usernamesById = state.usernamesById || persisted?.usernamesById || {};
     const roleFromRoster = userId && playerCharacters[userId] ? playerCharacters[userId] : null;
-    const resolvedRole = normalizeRole(state.role || roleFromRoster || persisted?.role || query.classId || 'DPS');
+    const defaultRole = isSandboxRoute ? 'Special_Attack' : 'DPS';
+    const resolvedRole = normalizeRole(state.role || roleFromRoster || query.classId || (isSandboxRoute ? 'Special_Attack' : persisted?.role) || defaultRole);
     const difficulty = toDifficulty(state.difficulty || persisted?.difficulty || query.difficulty, 'normal');
     const world = clampLevelPart(state.world ?? persisted?.world ?? query.world, 1);
     const stage = clampLevelPart(state.stage ?? persisted?.stage ?? query.stage, 1);
-    const token = state.token || getIdToken() || query.token || '';
+    const token = isSandboxRoute ? '' : (state.token || getIdToken() || query.token || '');
 
     const payload = {
       roomId,
@@ -103,7 +112,7 @@ export default function Game() {
   const [bossRemainingStocks, setBossRemainingStocks] = useState(4);
   const [isBossRefilling, setIsBossRefilling] = useState(false);
   const [bossDisplayHpPercent, setBossDisplayHpPercent] = useState(100);
-  const [spellcardName, setSpellcardName] = useState('Twilight Non-Spell "Evening Flutter"');
+  const [spellcardName, setSpellcardName] = useState('Phase 1 "Vanguard Barrage"');
 
   const [stageBanner, setStageBanner] = useState(null);
   const [bossWarningActive, setBossWarningActive] = useState(false);
@@ -335,6 +344,10 @@ export default function Game() {
   };
 
   const handleExitLobby = () => {
+    if (isSandboxRoute) {
+      navigate('/dashboard');
+      return;
+    }
     navigate('/join');
   };
 

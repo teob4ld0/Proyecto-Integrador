@@ -5,7 +5,7 @@ const { getStageConfig, hasNextStage, getNextStageIndices, WORLDS_PER_DIFFICULTY
 const VALID_DIFFICULTIES = ['normal', 'difficult', 'no_mercy'];
 
 function normalizeDifficulty(raw) {
-  if (VALID_DIFFICULTIES.includes(raw)) return raw;
+  if (typeof raw === 'string' && raw.length >= 3 && raw.length <= 20) return raw;
   return 'normal';
 }
 
@@ -22,15 +22,17 @@ function clampIndex(oneBased, max) {
 class CampaignManager {
   constructor(rawDifficulty, initialWorld = 1, initialStage = 1) {
     this.difficulty = normalizeDifficulty(rawDifficulty);
-    this.worldIndex = clampIndex(initialWorld, WORLDS_PER_DIFFICULTY);
-    this.stageIndex = clampIndex(initialStage, STAGES_PER_WORLD);
+    const isStandard = VALID_DIFFICULTIES.includes(this.difficulty);
+    this.worldIndex = isStandard ? clampIndex(initialWorld, WORLDS_PER_DIFFICULTY) : 0;
+    this.stageIndex = isStandard ? clampIndex(initialStage, STAGES_PER_WORLD) : 0;
     this.campaignComplete = false;
     this.stageState = 'intro'; // 'intro' | 'waves' | 'boss_warning' | 'boss_battle' | 'stage_clear'
   }
 
   setLevel(world = 1, stage = 1) {
-    this.worldIndex = clampIndex(world, WORLDS_PER_DIFFICULTY);
-    this.stageIndex = clampIndex(stage, STAGES_PER_WORLD);
+    const isStandard = VALID_DIFFICULTIES.includes(this.difficulty);
+    this.worldIndex = isStandard ? clampIndex(world, WORLDS_PER_DIFFICULTY) : 0;
+    this.stageIndex = isStandard ? clampIndex(stage, STAGES_PER_WORLD) : 0;
     this.campaignComplete = false;
     this.stageState = 'intro';
   }
@@ -41,11 +43,11 @@ class CampaignManager {
 
   markStageCleared() {
     this.stageState = 'stage_clear';
-    this.campaignComplete = !hasNextStage(this.worldIndex, this.stageIndex);
+    this.campaignComplete = !hasNextStage(this.worldIndex, this.stageIndex, this.difficulty);
   }
 
   advanceToNextStage() {
-    const next = getNextStageIndices(this.worldIndex, this.stageIndex);
+    const next = getNextStageIndices(this.worldIndex, this.stageIndex, this.difficulty);
     if (!next) return false;
     this.worldIndex = next.worldIndex;
     this.stageIndex = next.stageIndex;
@@ -55,7 +57,7 @@ class CampaignManager {
   }
 
   hasNextStage() {
-    return hasNextStage(this.worldIndex, this.stageIndex);
+    return hasNextStage(this.worldIndex, this.stageIndex, this.difficulty);
   }
 
   get bannerText() {

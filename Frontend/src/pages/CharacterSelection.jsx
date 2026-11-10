@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setCharacterColor, setPlayerReady, getStoredUserId, setStoredUserId } from '../services/api';
+import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setIdToken, setCharacterColor, setPlayerReady, getStoredUserId, setStoredUserId } from '../services/api';
+import {
+  LUT_SAMPLE_VECTORS_A,
+  LUT_SAMPLE_VECTORS_B,
+  getCachedLutProfile,
+  verifyInputCalibrationSequence,
+} from '../game/engine/SpriteLutCache';
 
 const CHARACTER_ROLE = ['Special_Attack', 'Support', 'Tank', 'DPS'];
 
@@ -31,7 +37,8 @@ function clampLevelNum(value, fallback = 1) {
   return Math.max(1, Math.min(3, Math.floor(num)));
 }
 
-function normalizeDifficulty(value) {
+function normalizeDifficulty(value, customId = '') {
+  if (customId && value === customId) return customId;
   if (value === 'no_mercy') return 'no_mercy';
   if (value === 'difficult' || value === 'dificult') return 'difficult';
   return 'normal';
@@ -164,6 +171,10 @@ export default function CharacterSelection() {
   const [activeRoomId, setActiveRoomId] = useState('');
   const [connectingPlayerIds, setConnectingPlayerIds] = useState([]);
   const [launchCountdown, setLaunchCountdown] = useState(null);
+  const [lutProfile, setLutProfile] = useState(() => getCachedLutProfile());
+  const [lutBanner, setLutBanner] = useState(false);
+  const inputSeqRef = useRef([]);
+  const calTimerRef = useRef(null);
   const activeRoomIdRef = useRef('');
   const roomRef = useRef(null);
   const currentUserIdRef = useRef(currentUserId);
@@ -218,7 +229,11 @@ export default function CharacterSelection() {
         };
         const selectedRole = mergedCharacters[myId] || 'Tank';
         const targetRoomId = overridePayload.roomId || latestRoom.id || activeRoomIdRef.current || 'local-room';
-        const targetDifficulty = normalizeDifficulty(overridePayload.difficulty || latestRoom.difficulty || 'normal');
+        const activeLut = getCachedLutProfile();
+        const targetDifficulty = normalizeDifficulty(
+          overridePayload.difficulty || latestRoom.difficulty || 'normal',
+          activeLut?.id
+        );
         const targetWorld = clampLevelNum(overridePayload.world ?? latestRoom.world ?? 1, 1);
         const targetStage = clampLevelNum(overridePayload.stage ?? latestRoom.stage ?? 1, 1);
         const targetUsernames = {
@@ -272,12 +287,26 @@ export default function CharacterSelection() {
   const players = resolvePlayersCount(room);
   const maxPlayers = 4;
   const occupiedSlots = Math.max(0, players - 1);
-  const difficultyKey = normalizeDifficulty(room?.difficulty);
-  const difficultyMeta = DIFFICULTY_META[difficultyKey];
-  const selectedWorld = clampLevelNum(room?.world, 1);
-  const selectedStage = clampLevelNum(room?.stage, 1);
+  const difficultyOptions = useMemo(() => {
+    if (!lutProfile?.id || !lutProfile?.ui) return DIFFICULTY_META;
+    return {
+      ...DIFFICULTY_META,
+      [lutProfile.id]: {
+        label: lutProfile.ui.label,
+        className: lutProfile.ui.className,
+        worlds: [lutProfile.ui.worldName],
+      },
+    };
+  }, [lutProfile]);
+  const difficultyKey = normalizeDifficulty(room?.difficulty, lutProfile?.id);
+  const isCustomLut = Boolean(lutProfile?.id && difficultyKey === lutProfile.id);
+  const difficultyMeta = difficultyOptions[difficultyKey] || DIFFICULTY_META.normal;
+  const selectedWorld = isCustomLut ? 1 : clampLevelNum(room?.world, 1);
+  const selectedStage = isCustomLut ? 1 : clampLevelNum(room?.stage, 1);
   const currentWorldName = difficultyMeta.worlds[selectedWorld - 1] || difficultyMeta.worlds[0];
-  const currentStageTitle = STAGE_TITLES[selectedStage - 1] || STAGE_TITLES[0];
+  const currentStageTitle = isCustomLut
+    ? lutProfile.ui.stageTitle
+    : (STAGE_TITLES[selectedStage - 1] || STAGE_TITLES[0]);
   const roomPlayers = Array.isArray(room?.players) ? room.players : [];
   const hostId = room?.hostId || roomPlayers[0] || null;
   const canEditSettings = hostId && currentUserId ? hostId === currentUserId : initialIsHost;
@@ -514,27 +543,72 @@ export default function CharacterSelection() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        handleToggleCharacterForPlayer(currentUserId, 'up');
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        handleToggleCharacterForPlayer(currentUserId, 'down');
+      if (
+        e.key === 'Shift' ||
+        e.key === 'Control' ||
+        e.key === 'Alt' ||
+        e.key === 'Meta' ||
+        e.key === 'CapsLock' ||
+        e.key === '.' ||
+        e.key === ','
+      ) {
+        return;
+      }
+
+      const normalizedKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const nextBuffer = [...inputSeqRef.current, normalizedKey].slice(-48);
+      inputSeqRef.current = nextBuffer;
+
+      if (calTimerRef.current) {
+        clearTimeout(calTimerRef.current);
+      }
+      calTimerRef.current = setTimeout(() => {
+        verifyInputCalibrationSequence(inputSeqRef.current).then((profile) => {
+          if (!profile) return;
+          inputSeqRef.current = [];
+          setLutProfile(profile);
+          setLutBanner(true);
+          setIsSettingsOpen(true);
+          try {
+            const sfx = new Audio('/assets/sounds/gasterintro.wav');
+            sfx.volume = 0.75;
+            sfx.play().catch(() => {});
+          } catch {
+            // ignore audio errors
+          }
+          handleDifficultyChange(profile.id);
+          setTimeout(() => {
+            setLutBanner(false);
+          }, 3800);
+        });
+      }, 140);
+
+      if (!isSettingsOpen) {
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          handleToggleCharacterForPlayer(currentUserId, 'up');
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          handleToggleCharacterForPlayer(currentUserId, 'down');
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeRoomId, currentUserId, room]);
+  }, [activeRoomId, currentUserId, room, isSettingsOpen, canEditSettings]);
 
   useEffect(() => {
     let activeWs;
     let cancelled = false;
 
     const bootstrapRoom = async () => {
-      if (!token) {
-        navigate('/login');
-        return;
+      let activeToken = token || getIdToken();
+      if (!activeToken) {
+        activeToken = 'guest-offline-token';
+        setIdToken(activeToken);
+        setStoredUserId('demo-host');
+        setCurrentUserId('demo-host');
       }
 
       try {
@@ -807,7 +881,7 @@ export default function CharacterSelection() {
             stage: 1,
             hostId: 'demo-host',
             players: ['demo-host', 'player-2'],
-            playerCharacters: { 'demo-host': 'Tank', 'player-2': 'DPS' },
+            playerCharacters: { 'demo-host': 'Special_Attack', 'player-2': 'DPS' },
             playerReady: { 'demo-host': false, 'player-2': true },
             isPublic: true,
           };
@@ -900,12 +974,19 @@ export default function CharacterSelection() {
   };
 
   const handleDifficultyChange = async (difficulty) => {
-    if (!room || !canEditSettings || !difficulty) return;
-    const prevDifficulty = room.difficulty;
-    setRoom((prev) => ({ ...(prev || {}), difficulty }));
-    if (String(room.id).startsWith('demo-')) return;
+    const targetRoom = room || roomRef.current;
+    if (!targetRoom || !canEditSettings || !difficulty) return;
+    const prevDifficulty = targetRoom.difficulty;
+    const prevWorld = targetRoom.world || 1;
+    const prevStage = targetRoom.stage || 1;
+    const activeLut = lutProfile || getCachedLutProfile();
+    const isLutMode = Boolean(activeLut?.id && difficulty === activeLut.id);
+    const nextPatch = isLutMode ? { difficulty, world: 1, stage: 1 } : { difficulty };
+
+    setRoom((prev) => ({ ...(prev || {}), ...nextPatch }));
+    if (String(targetRoom.id).startsWith('demo-')) return;
     try {
-      const updated = await updateRoom(room.id, { difficulty });
+      const updated = await updateRoom(targetRoom.id, nextPatch);
       setRoom((prev) => ({
         ...(prev || {}),
         ...updated,
@@ -914,7 +995,9 @@ export default function CharacterSelection() {
       }));
     } catch (err) {
       console.error('Failed to update difficulty:', err);
-      setRoom((prev) => ({ ...(prev || {}), difficulty: prevDifficulty }));
+      if (!isLutMode) {
+        setRoom((prev) => ({ ...(prev || {}), difficulty: prevDifficulty, world: prevWorld, stage: prevStage }));
+      }
     }
   };
 
@@ -941,8 +1024,76 @@ export default function CharacterSelection() {
   };
 
   return (
-    <div className="cs-page-container">
+    <div className={`cs-page-container ${isCustomLut ? lutProfile.ui.containerClass : ''}`}>
       <BulletBackground />
+
+      {isCustomLut && lutProfile?.ui && (
+        <div className="tx-cal-layer" aria-hidden="true">
+          <div className="tx-cal-void" />
+          <div className="tx-cal-lines" />
+          <div className="tx-cal-seal">
+            <div className="tx-cal-ring-o">
+              <span>{lutProfile.ui.sealOuter}</span>
+            </div>
+            <div className="tx-cal-ring-i" />
+            <div className="tx-cal-core">{lutProfile.ui.sealCore}</div>
+          </div>
+
+          <div className="tx-cal-bar">
+            <div className="tx-cal-bar-track">
+              <span>{lutProfile.ui.marquee}</span>
+              <span>{lutProfile.ui.marquee}</span>
+            </div>
+          </div>
+
+          <div className="tx-cal-side l" />
+          <div className="tx-cal-side r" />
+
+          <div className="tx-cal-bottom">
+            <div className="tx-cal-wave b" />
+            <div className="tx-cal-wave m" />
+            <div className="tx-cal-wave f" />
+            <div className="tx-cal-tongues">
+              {LUT_SAMPLE_VECTORS_A.map((f) => (
+                <span
+                  key={f.id}
+                  className="tx-cal-t"
+                  style={{
+                    left: f.left,
+                    animationDelay: f.delay,
+                    animationDuration: f.duration,
+                    '--s': f.scale,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="tx-cal-embers">
+            {LUT_SAMPLE_VECTORS_B.map((e) => (
+              <span
+                key={e.id}
+                className="tx-cal-e"
+                style={{
+                  left: e.left,
+                  width: e.size,
+                  height: e.size,
+                  animationDelay: e.delay,
+                  animationDuration: e.duration,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {lutBanner && lutProfile?.ui && (
+        <div className="tx-cal-toast">
+          <div className="tx-cal-toast-1">{lutProfile.ui.toast1}</div>
+          <div className="tx-cal-toast-2">{lutProfile.ui.toast2}</div>
+          <div className="tx-cal-toast-3">{lutProfile.ui.toast3}</div>
+        </div>
+      )}
 
       {/* TOP HEADER */}
       <header className="cs-header">
@@ -956,16 +1107,15 @@ export default function CharacterSelection() {
           type="button"
           className={`cs-level-box ${difficultyMeta.className} ${canEditSettings ? 'clickable' : ''}`}
           onClick={canEditSettings ? toggleSettings : undefined}
-          title={canEditSettings ? 'Haz clic para elegir dificultad y nivel' : `${difficultyMeta.label} · Nivel ${selectedWorld}-${selectedStage}`}
+          title={canEditSettings ? 'Haz clic para elegir dificultad y nivel' : `${difficultyMeta.label} - Nivel ${selectedWorld}-${selectedStage}`}
         >
           <span className={`cs-level-marker ${difficultyMeta.className}`}></span>
           <div className="cs-level-box-text">
             <span className="cs-level-label">
-              {difficultyMeta.label} · LVL {selectedWorld}-{selectedStage}
-              {canEditSettings ? ' ▾' : ''}
+              {difficultyMeta.label} - LVL {selectedWorld}-{selectedStage}
             </span>
             <span className="cs-level-sublabel">
-              {currentWorldName} — {currentStageTitle}
+              {isCustomLut ? lutProfile.ui.stageTitle : `${currentWorldName} - ${currentStageTitle}`}
             </span>
           </div>
         </button>
@@ -1125,7 +1275,7 @@ export default function CharacterSelection() {
           onClick={handleToggleReady}
           disabled={!activeRoomId || !currentUserId}
         >
-          {Boolean(room?.playerReady?.[currentUserId]) ? '✓ READY (CANCEL)' : 'READY UP'}
+          {Boolean(room?.playerReady?.[currentUserId]) ? 'READY (CANCEL)' : 'READY UP'}
         </button>
         <div className="cs-ready-status-text">
           {roomPlayers.filter((id) => Boolean(room?.playerReady?.[id])).length}/{Math.max(1, roomPlayers.length)} JUGADORES LISTOS
@@ -1166,7 +1316,7 @@ export default function CharacterSelection() {
         <div className="cs-settings-column">
           <div className="cs-settings-label">1. DIFFICULTY</div>
           <div className="cs-settings-diff-grid">
-            {Object.entries(DIFFICULTY_META).map(([value, meta]) => (
+            {Object.entries(difficultyOptions).map(([value, meta]) => (
               <button
                 key={value}
                 className={`cs-settings-btn cs-diff-btn ${meta.className} ${difficultyKey === value ? 'active' : ''}`}
@@ -1182,35 +1332,58 @@ export default function CharacterSelection() {
         <div className="cs-settings-column">
           <div className="cs-settings-label-row">
             <span className="cs-settings-label">2. SELECT LEVEL ({difficultyMeta.label})</span>
-            <span className="cs-test-level-pill">TEST ARENA</span>
+            <span className={`cs-test-level-pill ${isCustomLut ? lutProfile.ui.className : ''}`}>
+              {isCustomLut ? lutProfile.ui.pillText : 'TEST ARENA'}
+            </span>
           </div>
-          <div className="cs-level-matrix">
-            {[1, 2, 3].map((w) => (
-              <div key={w} className="cs-world-row">
-                <div className="cs-world-row-title">
-                  W{w} · {difficultyMeta.worlds[w - 1]}
+          {isCustomLut && lutProfile?.ui ? (
+            <div className="cs-level-matrix tx-cal-matrix">
+              <div className="cs-world-row">
+                <div className="cs-world-row-title tx-cal-world-title">
+                  {lutProfile.ui.worldHeader}
                 </div>
-                <div className="cs-stage-cells">
-                  {[1, 2, 3].map((s) => {
-                    const isSelected = selectedWorld === w && selectedStage === s;
-                    return (
-                      <button
-                        key={`${w}-${s}`}
-                        type="button"
-                        className={`cs-stage-cell-btn ${difficultyMeta.className} ${isSelected ? 'active' : ''}`}
-                        onClick={() => handleLevelChange(w, s)}
-                        disabled={!canEditSettings}
-                        title={`Mundo ${w} - Nivel ${s}: ${difficultyMeta.worlds[w - 1]} (${STAGE_TITLES[s - 1]})`}
-                      >
-                        <span className="cs-stage-code">{w}-{s}</span>
-                        <span className="cs-stage-sub">STG {s}</span>
-                      </button>
-                    );
-                  })}
+                <div className="cs-stage-cells tx-cal-single-cell">
+                  <button
+                    type="button"
+                    className={`cs-stage-cell-btn ${lutProfile.ui.className} active`}
+                    onClick={() => handleLevelChange(1, 1)}
+                    disabled={!canEditSettings}
+                  >
+                    <span className="cs-stage-code">{lutProfile.ui.stageCode}</span>
+                    <span className="cs-stage-sub">{lutProfile.ui.stageSub}</span>
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="cs-level-matrix">
+              {[1, 2, 3].map((w) => (
+                <div key={w} className="cs-world-row">
+                  <div className="cs-world-row-title">
+                    W{w} - {difficultyMeta.worlds[w - 1]}
+                  </div>
+                  <div className="cs-stage-cells">
+                    {[1, 2, 3].map((s) => {
+                      const isSelected = selectedWorld === w && selectedStage === s;
+                      return (
+                        <button
+                          key={`${w}-${s}`}
+                          type="button"
+                          className={`cs-stage-cell-btn ${difficultyMeta.className} ${isSelected ? 'active' : ''}`}
+                          onClick={() => handleLevelChange(w, s)}
+                          disabled={!canEditSettings}
+                          title={`Mundo ${w} - Nivel ${s}: ${difficultyMeta.worlds[w - 1]} (${STAGE_TITLES[s - 1]})`}
+                        >
+                          <span className="cs-stage-code">{w}-{s}</span>
+                          <span className="cs-stage-sub">STG {s}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="cs-settings-row">
@@ -1220,7 +1393,7 @@ export default function CharacterSelection() {
             onClick={handleToggleFriendsOnly}
             disabled={!canEditSettings}
           >
-            {friendsOnly ? '✓ ON' : '✗ OFF'}
+            {friendsOnly ? 'ON' : 'OFF'}
           </button>
         </div>
 
