@@ -87,22 +87,14 @@ export default function LobbyBrowser() {
         setLoading(true);
       }
       const rooms = await getPublicRooms();
-      const onlyPublicRooms = Array.isArray(rooms) && rooms.length > 0
+      const onlyPublicRooms = Array.isArray(rooms)
         ? rooms.filter((room) => room?.isPublic !== false)
-        : [
-            { id: 'lobby-1', name: 'CYBER DANMAKU #01', difficulty: 'normal', playersCount: 2, admin: 'ALEX' },
-            { id: 'lobby-2', name: 'BULLET HELL CHAOS', difficulty: 'difficult', playersCount: 3, admin: 'NEXUS' },
-            { id: 'lobby-3', name: 'NO MERCY SPEEDRUN', difficulty: 'no_mercy', playersCount: 1, admin: 'REIMU' },
-          ];
+        : [];
       setLobbies(onlyPublicRooms);
       setError(null);
     } catch (err) {
-      console.warn('Backend offline, displaying demo lobbies for UI testing:', err);
-      setLobbies([
-        { id: 'lobby-1', name: 'CYBER DANMAKU #01', difficulty: 'normal', playersCount: 2, admin: 'ALEX' },
-        { id: 'lobby-2', name: 'BULLET HELL CHAOS', difficulty: 'difficult', playersCount: 3, admin: 'NEXUS' },
-        { id: 'lobby-3', name: 'NO MERCY SPEEDRUN', difficulty: 'no_mercy', playersCount: 1, admin: 'REIMU' },
-      ]);
+      console.warn('Error fetching rooms:', err);
+      setLobbies([]);
       setError(null);
     } finally {
       if (showLoading) {
@@ -117,8 +109,8 @@ export default function LobbyBrowser() {
         await joinRoom(selectedLobbyId);
         navigate('/character-selection', { state: { roomId: selectedLobbyId, isHost: false, alreadyJoined: true } });
       } catch (err) {
-        console.warn('Joining demo lobby:', err);
-        navigate('/character-selection', { state: { roomId: selectedLobbyId, isHost: false, alreadyJoined: true } });
+        console.error('Error joining room:', err);
+        setError(err.message || 'No se pudo unir a la sala.');
       }
     }
   };
@@ -202,7 +194,9 @@ export default function LobbyBrowser() {
               >
                 <div className={`lb-box lvl ${difficultyMeta.className}`}>
                   <span className="lb-room-name">{lobby.name}</span>
-                  <span className="lb-room-difficulty">{difficultyMeta.label}</span>
+                  <span className="lb-room-difficulty">
+                    {difficultyMeta.label} · LVL {lobby.world || 1}-{lobby.stage || 1}
+                  </span>
                 </div>
                 <div className="lb-box admin">{resolveUserName(lobby.hostId, 'HOST')}</div>
                 <div className="lb-box players">{resolvePlayersCount(lobby)}/{lobby.maxPlayers}</div>

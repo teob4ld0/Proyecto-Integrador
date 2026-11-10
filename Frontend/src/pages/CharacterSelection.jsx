@@ -1,20 +1,57 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BulletBackground from '../components/BulletBackground';
-import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setCharacterColor, getStoredUserId, setStoredUserId } from '../services/api';
+import { createRoom, deleteRoom, getRoom, getRoomByCode, getUsersList, joinRoom, leaveRoom, roomCodeFromRoomId, updateRoom, getCurrentUser, getIdToken, setCharacterColor, setPlayerReady, getStoredUserId, setStoredUserId } from '../services/api';
 
-const CHARACTER_ROLE = ['Tank', 'Support', 'DPS', 'Special_Attack'];
+const CHARACTER_ROLE = ['Special_Attack', 'Support', 'Tank', 'DPS'];
 
 const DIFFICULTY_META = {
-  normal: { label: 'NORMAL', className: 'normal' },
-  difficult: { label: 'DIFFICULT', className: 'difficult' },
-  no_mercy: { label: 'NO MERCY', className: 'nomercy' },
+  normal: {
+    label: 'NORMAL',
+    className: 'normal',
+    worlds: ['Moonlit Forest', 'Scarlet Riverside', 'Celestial Observatory'],
+  },
+  difficult: {
+    label: 'DIFFICULT',
+    className: 'difficult',
+    worlds: ['Infernal Peaks', 'Abyssal Depths', 'Storm Citadel'],
+  },
+  no_mercy: {
+    label: 'NO MERCY',
+    className: 'nomercy',
+    worlds: ['Void Sanctum', 'Shattered Realm', 'Oblivion Edge'],
+  },
 };
+
+const STAGE_TITLES = ['Danmaku Vanguard', 'Crimson Crossfire', 'Final Spell Duel'];
+
+function clampLevelNum(value, fallback = 1) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(1, Math.min(3, Math.floor(num)));
+}
 
 function normalizeDifficulty(value) {
   if (value === 'no_mercy') return 'no_mercy';
   if (value === 'difficult' || value === 'dificult') return 'difficult';
   return 'normal';
+}
+
+function getNextRole(currentRole, direction = 'down', takenByOthers = []) {
+  const takenSet = new Set(Array.isArray(takenByOthers) ? takenByOthers.filter(Boolean) : []);
+  const currentIndex = CHARACTER_ROLE.indexOf(currentRole);
+  const validIndex = currentIndex >= 0 ? currentIndex : 0;
+  const step = direction === 'down' ? 1 : -1;
+
+  for (let offset = 1; offset <= CHARACTER_ROLE.length; offset++) {
+    const idx = (validIndex + step * offset + CHARACTER_ROLE.length * 2) % CHARACTER_ROLE.length;
+    const candidate = CHARACTER_ROLE[idx];
+    if (!takenSet.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return CHARACTER_ROLE[(validIndex + step + CHARACTER_ROLE.length) % CHARACTER_ROLE.length];
 }
 
 function getRandomRole(exclude = '') {
@@ -51,14 +88,38 @@ function normalizePlayerCharacters(roomData, fallbackCharacters = {}) {
   const incomingCharacters = roomData?.playerCharacters && typeof roomData.playerCharacters === 'object'
     ? roomData.playerCharacters
     : {};
-  const mergedCharacters = { ...incomingCharacters, ...(fallbackCharacters || {}) };
+  const mergedCharacters = { ...(fallbackCharacters || {}), ...incomingCharacters };
   const normalizedCharacters = {};
+  const usedRoles = new Set();
 
   for (const playerId of players) {
-    normalizedCharacters[playerId] = mergedCharacters[playerId] || getRandomRole();
+    const candidate = mergedCharacters[playerId];
+    if (candidate && CHARACTER_ROLE.includes(candidate) && !usedRoles.has(candidate)) {
+      normalizedCharacters[playerId] = candidate;
+      usedRoles.add(candidate);
+    } else {
+      const freeRole = CHARACTER_ROLE.find((r) => !usedRoles.has(r)) || 'Special_Attack';
+      normalizedCharacters[playerId] = freeRole;
+      usedRoles.add(freeRole);
+    }
   }
 
   return normalizedCharacters;
+}
+
+function normalizePlayerReady(roomData, fallbackReady = {}) {
+  const players = Array.isArray(roomData?.players) ? roomData.players : [];
+  const incomingReady = roomData?.playerReady && typeof roomData.playerReady === 'object'
+    ? roomData.playerReady
+    : {};
+  const mergedReady = { ...(fallbackReady || {}), ...incomingReady };
+  const normalizedReady = {};
+
+  for (const playerId of players) {
+    normalizedReady[playerId] = Boolean(mergedReady[playerId]);
+  }
+
+  return normalizedReady;
 }
 
 function getWsSignalUrl() {
@@ -102,18 +163,124 @@ export default function CharacterSelection() {
   const [usernamesById, setUsernamesById] = useState({});
   const [activeRoomId, setActiveRoomId] = useState('');
   const [connectingPlayerIds, setConnectingPlayerIds] = useState([]);
+  const [launchCountdown, setLaunchCountdown] = useState(null);
+  const activeRoomIdRef = useRef('');
+  const roomRef = useRef(null);
+  const currentUserIdRef = useRef(currentUserId);
+  const usernamesByIdRef = useRef(usernamesById);
+  const creatingRoomPromiseRef = useRef(null);
   const leaveTriggeredRef = useRef(false);
+  const isGameStartingRef = useRef(false);
   const wsRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const launchTimerRef = useRef(null);
   const roomClosedRef = useRef(false);
+
+  useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    usernamesByIdRef.current = usernamesById;
+  }, [usernamesById]);
+
+  const cancelLaunchCountdown = () => {
+    if (launchTimerRef.current) {
+      clearInterval(launchTimerRef.current);
+      launchTimerRef.current = null;
+    }
+    isGameStartingRef.current = false;
+    setLaunchCountdown(null);
+  };
+
+  const triggerGameLaunch = (overridePayload = {}) => {
+    if (isGameStartingRef.current) return;
+    isGameStartingRef.current = true;
+    if (launchTimerRef.current) clearInterval(launchTimerRef.current);
+
+    let count = 3;
+    setLaunchCountdown(count);
+    launchTimerRef.current = setInterval(() => {
+      count--;
+      if (count <= 0) {
+        clearInterval(launchTimerRef.current);
+        launchTimerRef.current = null;
+
+        const latestRoom = roomRef.current || {};
+        const myId = currentUserIdRef.current || getStoredUserId() || 'player-local-host';
+        const mergedCharacters = {
+          ...(latestRoom.playerCharacters || {}),
+          ...(overridePayload.playerCharacters || {}),
+        };
+        const selectedRole = mergedCharacters[myId] || 'Tank';
+        const targetRoomId = overridePayload.roomId || latestRoom.id || activeRoomIdRef.current || 'local-room';
+        const targetDifficulty = normalizeDifficulty(overridePayload.difficulty || latestRoom.difficulty || 'normal');
+        const targetWorld = clampLevelNum(overridePayload.world ?? latestRoom.world ?? 1, 1);
+        const targetStage = clampLevelNum(overridePayload.stage ?? latestRoom.stage ?? 1, 1);
+        const targetUsernames = {
+          ...usernamesByIdRef.current,
+          ...(myId && playerName ? { [myId]: playerName } : {}),
+        };
+
+        try {
+          sessionStorage.setItem('danma_current_room_id', targetRoomId);
+          sessionStorage.setItem(
+            'danma_game_session',
+            JSON.stringify({
+              roomId: targetRoomId,
+              userId: myId,
+              role: selectedRole,
+              difficulty: targetDifficulty,
+              world: targetWorld,
+              stage: targetStage,
+              playerCharacters: mergedCharacters,
+              usernamesById: targetUsernames,
+            })
+          );
+        } catch {
+          // ignore storage errors
+        }
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+
+        navigate('/game', {
+          state: {
+            roomId: targetRoomId,
+            userId: myId,
+            role: selectedRole,
+            difficulty: targetDifficulty,
+            world: targetWorld,
+            stage: targetStage,
+            playerCharacters: mergedCharacters,
+            usernamesById: targetUsernames,
+            token: token || getIdToken(),
+          },
+        });
+      } else {
+        setLaunchCountdown(count);
+      }
+    }, 1000);
+  };
 
   const players = resolvePlayersCount(room);
   const maxPlayers = 4;
   const occupiedSlots = Math.max(0, players - 1);
   const difficultyKey = normalizeDifficulty(room?.difficulty);
   const difficultyMeta = DIFFICULTY_META[difficultyKey];
+  const selectedWorld = clampLevelNum(room?.world, 1);
+  const selectedStage = clampLevelNum(room?.stage, 1);
+  const currentWorldName = difficultyMeta.worlds[selectedWorld - 1] || difficultyMeta.worlds[0];
+  const currentStageTitle = STAGE_TITLES[selectedStage - 1] || STAGE_TITLES[0];
   const roomPlayers = Array.isArray(room?.players) ? room.players : [];
   const hostId = room?.hostId || roomPlayers[0] || null;
+  const canEditSettings = hostId && currentUserId ? hostId === currentUserId : initialIsHost;
   const joinerIds = useMemo(
     () => roomPlayers.filter((id) => id !== hostId),
     [hostId, roomPlayers],
@@ -137,12 +304,12 @@ export default function CharacterSelection() {
   };
 
   const getPlayerColor = (userId) => {
-    if (!userId) return 'Tank';
+    if (!userId) return 'Special_Attack';
     const roomCharacters = room?.playerCharacters;
     if (roomCharacters && typeof roomCharacters === 'object') {
-      return roomCharacters[userId] || 'Tank';
+      return roomCharacters[userId] || 'Special_Attack';
     }
-    return 'Tank';
+    return 'Special_Attack';
   };
 
   const setPlayerColorInRoom = (userId, color) => {
@@ -155,16 +322,45 @@ export default function CharacterSelection() {
           ...(prev.playerCharacters || {}),
           [userId]: color,
         },
+        playerReady: {
+          ...(prev.playerReady || {}),
+          [userId]: false,
+        },
       };
     });
   };
 
-  const handleToggleCharacterForPlayer = (userId) => {
+  const handleToggleCharacterForPlayer = (userId, direction = 'down') => {
     if (!userId || userId !== currentUserId || !activeRoomId) return;
     const currentColor = getPlayerColor(userId);
-    const nextColor = getRandomRole(currentColor);
+    const takenByOthers = Object.entries(room?.playerCharacters || {})
+      .filter(([pid]) => pid !== userId && roomPlayers.includes(pid))
+      .map(([, r]) => r);
+    const nextColor = getNextRole(currentColor, direction, takenByOthers);
+    if (nextColor === currentColor) return;
 
+    cancelLaunchCountdown();
     setPlayerColorInRoom(userId, nextColor);
+
+    if (String(activeRoomId).startsWith('demo-')) {
+      return;
+    }
+
+    // Send WebSocket notification immediately to all peers in the room
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'set-character-color',
+        roomId: activeRoomId,
+        color: nextColor,
+      }));
+    }
+
+    // If we were ready, cancel ready on character change
+    if (room?.playerReady?.[userId]) {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'set-ready', roomId: activeRoomId, isReady: false }));
+      }
+    }
 
     // Use HTTP endpoint — more reliable than WS for persistent state changes
     setCharacterColor(activeRoomId, nextColor).catch(() => {
@@ -173,8 +369,78 @@ export default function CharacterSelection() {
     });
   };
 
+  const handleToggleReady = () => {
+    if (!activeRoomId || !currentUserId) return;
+    const currentReady = Boolean(room?.playerReady?.[currentUserId]);
+    const nextReady = !currentReady;
+
+    if (!nextReady) {
+      cancelLaunchCountdown();
+    }
+
+    // Optimistic update
+    setRoom((prev) => {
+      const nextPlayerReady = {
+        ...(prev?.playerReady || {}),
+        [currentUserId]: nextReady,
+      };
+      return {
+        ...(prev || {}),
+        playerReady: nextPlayerReady,
+      };
+    });
+
+    if (String(activeRoomId).startsWith('demo-')) {
+      if (nextReady) {
+        triggerGameLaunch({
+          roomId: activeRoomId,
+          playerCharacters: {
+            ...(room?.playerCharacters || {}),
+            [currentUserId]: getPlayerColor(currentUserId),
+          },
+          difficulty: room?.difficulty || 'normal',
+          world: room?.world || 1,
+          stage: room?.stage || 1,
+        });
+      }
+      return;
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'set-ready',
+        roomId: activeRoomId,
+        isReady: nextReady,
+      }));
+    }
+
+    setPlayerReady(activeRoomId, nextReady)
+      .then((res) => {
+        if (res?.allReady) {
+          triggerGameLaunch({
+            roomId: activeRoomId,
+            playerCharacters: res.playerCharacters || roomRef.current?.playerCharacters,
+            difficulty: res.difficulty || roomRef.current?.difficulty || 'normal',
+            world: res.world ?? roomRef.current?.world ?? 1,
+            stage: res.stage ?? roomRef.current?.stage ?? 1,
+          });
+        }
+      })
+      .catch(() => {
+        // Revert on error
+        setRoom((prev) => ({
+          ...(prev || {}),
+          playerReady: {
+            ...(prev?.playerReady || {}),
+            [currentUserId]: currentReady,
+          },
+        }));
+      });
+  };
+
   const leaveCurrentRoom = async (keepalive = false) => {
-    if (!activeRoomId || !token || leaveTriggeredRef.current) return;
+    const targetRoomId = activeRoomId || activeRoomIdRef.current;
+    if (!targetRoomId || !token || leaveTriggeredRef.current || isGameStartingRef.current) return;
     leaveTriggeredRef.current = true;
     roomClosedRef.current = true;
 
@@ -193,9 +459,9 @@ export default function CharacterSelection() {
 
     try {
       if (isCurrentUserHost) {
-        await deleteRoom(activeRoomId, { keepalive });
+        await deleteRoom(targetRoomId, { keepalive });
       } else {
-        await leaveRoom(activeRoomId, { keepalive });
+        await leaveRoom(targetRoomId, { keepalive });
       }
     } catch (err) {
       const message = (err?.message || '').toLowerCase();
@@ -204,7 +470,7 @@ export default function CharacterSelection() {
       }
       // Fallback: if role detection was stale, try the join-leave endpoint as non-host.
       if (isCurrentUserHost) {
-        leaveRoom(activeRoomId, { keepalive }).catch(() => {});
+        leaveRoom(targetRoomId, { keepalive }).catch(() => {});
       }
     }
   };
@@ -248,9 +514,12 @@ export default function CharacterSelection() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (e.key === 'ArrowUp') {
         e.preventDefault();
-        handleToggleCharacterForPlayer(currentUserId);
+        handleToggleCharacterForPlayer(currentUserId, 'up');
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        handleToggleCharacterForPlayer(currentUserId, 'down');
       }
     };
 
@@ -274,7 +543,7 @@ export default function CharacterSelection() {
         setConnectingPlayerIds([]);
         const isHost = flowState.isHost !== false;
         let roomData;
-        let roomId = flowState.roomId || '';
+        let roomId = flowState.roomId || activeRoomIdRef.current || '';
         const roomCode = String(flowState.roomCode || '').trim().toUpperCase();
         const alreadyJoined = flowState.alreadyJoined === true;
 
@@ -282,12 +551,15 @@ export default function CharacterSelection() {
           if (roomId) {
             roomData = await getRoom(roomId);
           } else {
-            roomData = await createRoom({
-              name: 'NO MERCY LOBBY',
-              map: 'classic',
-              maxPlayers: 4,
-              isPublic: !friendsOnly,
-            });
+            if (!creatingRoomPromiseRef.current) {
+              creatingRoomPromiseRef.current = createRoom({
+                name: 'NO MERCY LOBBY',
+                map: 'classic',
+                maxPlayers: 4,
+                isPublic: !friendsOnly,
+              });
+            }
+            roomData = await creatingRoomPromiseRef.current;
             roomId = roomData.id;
           }
         } else {
@@ -307,9 +579,11 @@ export default function CharacterSelection() {
         }
 
         if (cancelled) return;
+        activeRoomIdRef.current = roomData.id;
         setRoom((prev) => ({
           ...roomData,
           playerCharacters: normalizePlayerCharacters(roomData, prev?.playerCharacters),
+          playerReady: normalizePlayerReady(roomData, prev?.playerReady),
         }));
         setActiveRoomId(roomData.id);
         leaveTriggeredRef.current = false;
@@ -341,6 +615,9 @@ export default function CharacterSelection() {
                 const updatedCharacters = message.playerCharacters && typeof message.playerCharacters === 'object'
                   ? message.playerCharacters
                   : (prev?.playerCharacters || {});
+                const updatedReady = message.playerReady && typeof message.playerReady === 'object'
+                  ? message.playerReady
+                  : (prev?.playerReady || {});
 
                 return {
                   ...(prev || {}),
@@ -352,6 +629,13 @@ export default function CharacterSelection() {
                       playerCharacters: updatedCharacters,
                     },
                     prev?.playerCharacters,
+                  ),
+                  playerReady: normalizePlayerReady(
+                    {
+                      players: updatedPlayers,
+                      playerReady: updatedReady,
+                    },
+                    prev?.playerReady,
                   ),
                   player: {
                     ...(prev?.player || {}),
@@ -373,11 +657,61 @@ export default function CharacterSelection() {
                     ...(prev.playerCharacters || {}),
                     [message.userId]: message.color,
                   };
+                const updatedReady = message.playerReady && typeof message.playerReady === 'object'
+                  ? message.playerReady
+                  : {
+                    ...(prev.playerReady || {}),
+                    [message.userId]: false,
+                  };
 
                 return {
                   ...prev,
                   playerCharacters: updatedCharacters,
+                  playerReady: updatedReady,
                 };
+              });
+            }
+            if (message.type === 'room-ready-updated') {
+              if (!message.allReady) {
+                cancelLaunchCountdown();
+              }
+              setRoom((prev) => {
+                if (!prev) return prev;
+                const updatedReady = message.playerReady && typeof message.playerReady === 'object'
+                  ? message.playerReady
+                  : {
+                    ...(prev.playerReady || {}),
+                    [message.userId]: Boolean(message.isReady),
+                  };
+                return {
+                  ...prev,
+                  playerCharacters: message.playerCharacters || prev.playerCharacters,
+                  playerReady: updatedReady,
+                };
+              });
+            }
+            if (message.type === 'room-settings-updated') {
+              setRoom((prev) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  difficulty: message.difficulty ?? prev.difficulty,
+                  world: message.world ?? prev.world,
+                  stage: message.stage ?? prev.stage,
+                  isPublic: message.isPublic !== undefined ? message.isPublic : prev.isPublic,
+                };
+              });
+              if (message.isPublic !== undefined) {
+                setFriendsOnly(!message.isPublic);
+              }
+            }
+            if (message.type === 'game-start') {
+              triggerGameLaunch({
+                roomId: message.roomId || roomData.id,
+                playerCharacters: message.playerCharacters,
+                difficulty: message.difficulty || roomRef.current?.difficulty || roomData.difficulty || 'normal',
+                world: message.world ?? roomRef.current?.world ?? roomData.world ?? 1,
+                stage: message.stage ?? roomRef.current?.stage ?? roomData.stage ?? 1,
               });
             }
             if (message.type === 'player-join-request') {
@@ -394,6 +728,7 @@ export default function CharacterSelection() {
                   setRoom((prev) => ({
                     ...latest,
                     playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
+                    playerReady: normalizePlayerReady(latest, prev?.playerReady),
                   }));
                   const latestPlayers = Array.isArray(latest?.players) ? latest.players : [];
                   setConnectingPlayerIds((prev) => prev.filter((id) => !latestPlayers.includes(id)));
@@ -405,6 +740,10 @@ export default function CharacterSelection() {
               if (refreshTimerRef.current) {
                 clearInterval(refreshTimerRef.current);
                 refreshTimerRef.current = null;
+              }
+              if (launchTimerRef.current) {
+                clearInterval(launchTimerRef.current);
+                launchTimerRef.current = null;
               }
               setRoomError(message.message || 'El host se salio de la sala.');
               setTimeout(() => {
@@ -424,16 +763,31 @@ export default function CharacterSelection() {
         };
 
         refreshTimerRef.current = setInterval(() => {
-          if (roomClosedRef.current) return;
+          if (roomClosedRef.current || isGameStartingRef.current) return;
           getRoom(roomData.id)
             .then((latest) => {
               if (!cancelled) {
+                const normalizedChars = normalizePlayerCharacters(latest, roomRef.current?.playerCharacters);
+                const normalizedRdy = normalizePlayerReady(latest, roomRef.current?.playerReady);
                 setRoom((prev) => ({
                   ...latest,
-                  playerCharacters: normalizePlayerCharacters(latest, prev?.playerCharacters),
+                  playerCharacters: normalizedChars,
+                  playerReady: normalizedRdy,
                 }));
                 const latestPlayers = Array.isArray(latest?.players) ? latest.players : [];
                 setConnectingPlayerIds((prev) => prev.filter((id) => !latestPlayers.includes(id)));
+
+                const everyoneReady =
+                  latestPlayers.length > 0 && latestPlayers.every((pid) => normalizedRdy[pid] === true);
+                if (latest?.status === 'in_game' || everyoneReady) {
+                  triggerGameLaunch({
+                    roomId: latest.id,
+                    playerCharacters: normalizedChars,
+                    difficulty: latest.difficulty || 'normal',
+                    world: latest.world || 1,
+                    stage: latest.stage || 1,
+                  });
+                }
               }
             })
             .catch(() => {});
@@ -449,16 +803,21 @@ export default function CharacterSelection() {
             id: 'demo-room-01',
             name: 'NO MERCY LOBBY',
             difficulty: 'normal',
+            world: 1,
+            stage: 1,
             hostId: 'demo-host',
             players: ['demo-host', 'player-2'],
             playerCharacters: { 'demo-host': 'Tank', 'player-2': 'DPS' },
+            playerReady: { 'demo-host': false, 'player-2': true },
             isPublic: true,
           };
+          activeRoomIdRef.current = demoRoom.id;
           setRoom(demoRoom);
           setActiveRoomId(demoRoom.id);
           setLobbyCode('DEMO01');
           setCurrentUserId('demo-host');
           setPlayerName('PLAYER 1');
+          setUsernamesById((prev) => ({ ...prev, 'player-2': 'ALLY BOT' }));
         }
       }
     };
@@ -470,6 +829,10 @@ export default function CharacterSelection() {
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
+      }
+      if (launchTimerRef.current) {
+        clearInterval(launchTimerRef.current);
+        launchTimerRef.current = null;
       }
       if (activeWs && activeWs.readyState === WebSocket.OPEN) {
         activeWs.close();
@@ -501,7 +864,7 @@ export default function CharacterSelection() {
   };
 
   const toggleSettings = () => {
-    if (initialIsHost) setIsSettingsOpen(!isSettingsOpen);
+    if (canEditSettings) setIsSettingsOpen((prev) => !prev);
   };
 
   const handleCopyCode = async () => {
@@ -515,15 +878,20 @@ export default function CharacterSelection() {
   };
 
   const handleToggleFriendsOnly = async () => {
-    if (!room || !initialIsHost) return;
+    if (!room || !canEditSettings) return;
     const newValue = !friendsOnly;
     setFriendsOnly(newValue);
+    if (String(room.id).startsWith('demo-')) {
+      setRoom((prev) => ({ ...(prev || {}), isPublic: !newValue }));
+      return;
+    }
     try {
       const updated = await updateRoom(room.id, { isPublic: !newValue });
       setRoom((prev) => ({
         ...(prev || {}),
         ...updated,
         playerCharacters: normalizePlayerCharacters(updated, prev?.playerCharacters),
+        playerReady: normalizePlayerReady(updated, prev?.playerReady),
       }));
     } catch (err) {
       console.error('Failed to update room:', err);
@@ -532,16 +900,43 @@ export default function CharacterSelection() {
   };
 
   const handleDifficultyChange = async (difficulty) => {
-    if (!room || !initialIsHost || !difficulty) return;
+    if (!room || !canEditSettings || !difficulty) return;
+    const prevDifficulty = room.difficulty;
+    setRoom((prev) => ({ ...(prev || {}), difficulty }));
+    if (String(room.id).startsWith('demo-')) return;
     try {
       const updated = await updateRoom(room.id, { difficulty });
       setRoom((prev) => ({
         ...(prev || {}),
         ...updated,
         playerCharacters: normalizePlayerCharacters(updated, prev?.playerCharacters),
+        playerReady: normalizePlayerReady(updated, prev?.playerReady),
       }));
     } catch (err) {
       console.error('Failed to update difficulty:', err);
+      setRoom((prev) => ({ ...(prev || {}), difficulty: prevDifficulty }));
+    }
+  };
+
+  const handleLevelChange = async (world, stage) => {
+    if (!room || !canEditSettings) return;
+    const nextWorld = clampLevelNum(world, 1);
+    const nextStage = clampLevelNum(stage, 1);
+    const prevWorld = room.world || 1;
+    const prevStage = room.stage || 1;
+    setRoom((prev) => ({ ...(prev || {}), world: nextWorld, stage: nextStage }));
+    if (String(room.id).startsWith('demo-')) return;
+    try {
+      const updated = await updateRoom(room.id, { world: nextWorld, stage: nextStage });
+      setRoom((prev) => ({
+        ...(prev || {}),
+        ...updated,
+        playerCharacters: normalizePlayerCharacters(updated, prev?.playerCharacters),
+        playerReady: normalizePlayerReady(updated, prev?.playerReady),
+      }));
+    } catch (err) {
+      console.error('Failed to update level:', err);
+      setRoom((prev) => ({ ...(prev || {}), world: prevWorld, stage: prevStage }));
     }
   };
 
@@ -557,10 +952,23 @@ export default function CharacterSelection() {
           </svg>
         </button>
 
-        <div className={`cs-level-box ${difficultyMeta.className}`}>
+        <button
+          type="button"
+          className={`cs-level-box ${difficultyMeta.className} ${canEditSettings ? 'clickable' : ''}`}
+          onClick={canEditSettings ? toggleSettings : undefined}
+          title={canEditSettings ? 'Haz clic para elegir dificultad y nivel' : `${difficultyMeta.label} · Nivel ${selectedWorld}-${selectedStage}`}
+        >
           <span className={`cs-level-marker ${difficultyMeta.className}`}></span>
-          <span className="cs-level-label">{difficultyMeta.label}</span>
-        </div>
+          <div className="cs-level-box-text">
+            <span className="cs-level-label">
+              {difficultyMeta.label} · LVL {selectedWorld}-{selectedStage}
+              {canEditSettings ? ' ▾' : ''}
+            </span>
+            <span className="cs-level-sublabel">
+              {currentWorldName} — {currentStageTitle}
+            </span>
+          </div>
+        </button>
 
         <div className="cs-header-icons">
           {/* Box icon */}
@@ -575,8 +983,8 @@ export default function CharacterSelection() {
           <button
             className="cs-icon-btn"
             onClick={toggleSettings}
-            disabled={!initialIsHost}
-            title={initialIsHost ? 'Room settings' : 'Only host can edit settings'}
+            disabled={!canEditSettings}
+            title={canEditSettings ? 'Elegir Dificultad y Nivel' : 'Solo el host puede cambiar la configuración'}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
@@ -596,47 +1004,73 @@ export default function CharacterSelection() {
       <div className="cs-main-grid">
         
         {/* SLOT 1 (Host - always leftmost) */}
-        <div className="cs-slot">
-          <div className="cs-slot-header">
-            {hostId
-              ? `${resolveDisplayName(hostId, 'HOST')} (HOST)`
-              : 'HOST'}
-          </div>
-          <div className="cs-slot-body">
-            <div
-              className="cs-select-arrow up"
-              onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId) : undefined}
-              style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
-            ></div>
-            <div className="cs-character-display">
-              <div className={`cs-character-box ${getPlayerColor(hostId)}`}></div>
+        {(() => {
+          const isHostReady = Boolean(hostId && room?.playerReady?.[hostId]);
+          return (
+            <div className={`cs-slot ${isHostReady ? 'is-ready' : ''}`}>
+              <div className="cs-slot-header">
+                <div>
+                  {hostId
+                    ? `${resolveDisplayName(hostId, 'HOST')} (HOST)`
+                    : 'HOST'}
+                  {hostId && (
+                    <div>
+                      <span className={`cs-slot-ready-tag ${isHostReady ? 'ready' : 'not-ready'}`}>
+                        {isHostReady ? 'READY' : 'NOT READY'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="cs-slot-body">
+                <div
+                  className="cs-select-arrow up"
+                  onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId, 'up') : undefined}
+                  style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                ></div>
+                <div className="cs-character-display">
+                  <div className={`cs-character-box ${getPlayerColor(hostId)}`}>
+                    {getPlayerColor(hostId) === 'Special_Attack' ? 'SP.ATK' : getPlayerColor(hostId).toUpperCase()}
+                  </div>
+                </div>
+                <div
+                  className="cs-select-arrow down"
+                  onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId, 'down') : undefined}
+                  style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                ></div>
+              </div>
+              <div className="cs-slot-footer">
+                <div className="cs-equip-box"></div>
+                <div className="cs-equip-box"></div>
+                <div className="cs-equip-box"></div>
+              </div>
             </div>
-            <div
-              className="cs-select-arrow down"
-              onClick={hostId === currentUserId ? () => handleToggleCharacterForPlayer(hostId) : undefined}
-              style={hostId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
-            ></div>
-          </div>
-          <div className="cs-slot-footer">
-            <div className="cs-equip-box"></div>
-            <div className="cs-equip-box"></div>
-            <div className="cs-equip-box"></div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* OTHER SLOTS (joiners fill left to right) */}
         {joinerSlots.map((joinerId, index) => {
           const isConnecting = Boolean(joinerId) && connectingJoinerIds.includes(joinerId);
+          const isJoinerReady = Boolean(joinerId && room?.playerReady?.[joinerId]);
           return (
-          <div className="cs-slot" key={index}>
+          <div className={`cs-slot ${isJoinerReady ? 'is-ready' : ''}`} key={index}>
             <div className="cs-slot-header">
-              {isConnecting
-                ? 'Bitch Conecting...'
-                : (joinerId
-                  ? (joinerId === currentUserId
-                    ? `${resolveDisplayName(joinerId)} (YOU)`
-                    : resolveDisplayName(joinerId, `PLAYER ${index + 2}`))
-                  : 'WAITING...')}
+              <div>
+                {isConnecting
+                  ? 'Connecting...'
+                  : (joinerId
+                    ? (joinerId === currentUserId
+                      ? `${resolveDisplayName(joinerId)} (YOU)`
+                      : resolveDisplayName(joinerId, `PLAYER ${index + 2}`))
+                    : 'WAITING...')}
+                {joinerId && !isConnecting && (
+                  <div>
+                    <span className={`cs-slot-ready-tag ${isJoinerReady ? 'ready' : 'not-ready'}`}>
+                      {isJoinerReady ? 'READY' : 'NOT READY'}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             
             {!joinerId && (
@@ -657,15 +1091,17 @@ export default function CharacterSelection() {
               <div className="cs-slot-body">
                 <div
                   className="cs-select-arrow up"
-                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId) : undefined}
+                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId, 'up') : undefined}
                   style={joinerId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                 ></div>
                 <div className="cs-character-display">
-                  <div className={`cs-character-box ${getPlayerColor(joinerId)}`}></div>
+                  <div className={`cs-character-box ${getPlayerColor(joinerId)}`}>
+                    {getPlayerColor(joinerId) === 'Special_Attack' ? 'SP.ATK' : getPlayerColor(joinerId).toUpperCase()}
+                  </div>
                 </div>
                 <div
                   className="cs-select-arrow down"
-                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId) : undefined}
+                  onClick={joinerId === currentUserId ? () => handleToggleCharacterForPlayer(joinerId, 'down') : undefined}
                   style={joinerId === currentUserId ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
                 ></div>
               </div>
@@ -682,9 +1118,39 @@ export default function CharacterSelection() {
 
       </div>
 
+      {/* BOTTOM ACTION BAR / READY BUTTON */}
+      <div className="cs-bottom-bar">
+        <button
+          className={`cs-main-ready-btn ${Boolean(room?.playerReady?.[currentUserId]) ? 'active' : ''}`}
+          onClick={handleToggleReady}
+          disabled={!activeRoomId || !currentUserId}
+        >
+          {Boolean(room?.playerReady?.[currentUserId]) ? '✓ READY (CANCEL)' : 'READY UP'}
+        </button>
+        <div className="cs-ready-status-text">
+          {roomPlayers.filter((id) => Boolean(room?.playerReady?.[id])).length}/{Math.max(1, roomPlayers.length)} JUGADORES LISTOS
+        </div>
+      </div>
+
+      {/* LAUNCH COUNTDOWN OVERLAY */}
+      {launchCountdown !== null && (
+        <div className="cs-launch-overlay">
+          <div className="cs-launch-card">
+            <div className="cs-launch-title">¡TODOS LOS JUGADORES LISTOS!</div>
+            <div className="cs-launch-countdown">{launchCountdown}</div>
+            <div style={{ color: '#00f0ff', fontSize: '0.78rem', marginTop: '0.9rem', letterSpacing: '0.08em' }}>
+              {difficultyMeta.label} · NIVEL {selectedWorld}-{selectedStage} ({currentWorldName})
+            </div>
+            <div style={{ color: '#aaa', fontSize: '0.72rem', marginTop: '0.5rem', letterSpacing: '0.08em' }}>
+              CARGANDO ARENA DE COMBATE...
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSettingsOpen && <div className="cs-settings-overlay" onClick={toggleSettings}></div>}
 
-      {/* SETTINGS SIDEBAR (Toggled by Gear Icon) */}
+      {/* SETTINGS SIDEBAR (Toggled by Top Difficulty Banner or Gear Icon) */}
       <div className={`cs-settings-sidebar ${isSettingsOpen ? 'open' : ''}`}>
         <button className="cs-settings-close-btn" onClick={toggleSettings}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -698,17 +1164,51 @@ export default function CharacterSelection() {
         </div>
 
         <div className="cs-settings-column">
-          <div className="cs-settings-label">DIFFICULTY</div>
+          <div className="cs-settings-label">1. DIFFICULTY</div>
           <div className="cs-settings-diff-grid">
             {Object.entries(DIFFICULTY_META).map(([value, meta]) => (
               <button
                 key={value}
                 className={`cs-settings-btn cs-diff-btn ${meta.className} ${difficultyKey === value ? 'active' : ''}`}
                 onClick={() => handleDifficultyChange(value)}
-                disabled={!initialIsHost}
+                disabled={!canEditSettings}
               >
                 {meta.label}
               </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="cs-settings-column">
+          <div className="cs-settings-label-row">
+            <span className="cs-settings-label">2. SELECT LEVEL ({difficultyMeta.label})</span>
+            <span className="cs-test-level-pill">TEST ARENA</span>
+          </div>
+          <div className="cs-level-matrix">
+            {[1, 2, 3].map((w) => (
+              <div key={w} className="cs-world-row">
+                <div className="cs-world-row-title">
+                  W{w} · {difficultyMeta.worlds[w - 1]}
+                </div>
+                <div className="cs-stage-cells">
+                  {[1, 2, 3].map((s) => {
+                    const isSelected = selectedWorld === w && selectedStage === s;
+                    return (
+                      <button
+                        key={`${w}-${s}`}
+                        type="button"
+                        className={`cs-stage-cell-btn ${difficultyMeta.className} ${isSelected ? 'active' : ''}`}
+                        onClick={() => handleLevelChange(w, s)}
+                        disabled={!canEditSettings}
+                        title={`Mundo ${w} - Nivel ${s}: ${difficultyMeta.worlds[w - 1]} (${STAGE_TITLES[s - 1]})`}
+                      >
+                        <span className="cs-stage-code">{w}-{s}</span>
+                        <span className="cs-stage-sub">STG {s}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -718,7 +1218,7 @@ export default function CharacterSelection() {
           <button 
             className={`cs-settings-btn ${friendsOnly ? 'active' : ''}`} 
             onClick={handleToggleFriendsOnly}
-            disabled={!initialIsHost}
+            disabled={!canEditSettings}
           >
             {friendsOnly ? '✓ ON' : '✗ OFF'}
           </button>

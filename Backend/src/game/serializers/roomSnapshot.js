@@ -12,6 +12,7 @@ function serializePlayers(players, fallbackStats) {
       angle: player.angle,
       isReady: player.isReady,
       character: player.character,
+      focus: Boolean(player.input?.focus),
       hp: Number(player.hp.toFixed(2)),
       sp: Number(player.sp.toFixed(2)),
       maxHp: stats.hpMax,

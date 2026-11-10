@@ -2,7 +2,22 @@ const { randomUUID } = require('crypto');
 const { z } = require('zod');
 const redis = require('../config/redis');
 const authenticate = require('../middleware/auth');
-const { addPlayer, removePlayer, getRandomCharacterRole } = require('../utils/roomUtils');
+const {
+  addPlayer,
+  removePlayer,
+  syncPlayerCharacters,
+  CHARACTER_ROLES,
+  getRandomCharacterRole,
+  getAvailableCharacterRole,
+} = require('../utils/roomUtils');
+
+function getSignalHelpers() {
+  const signalPath = require.resolve('../signal');
+  if (require.cache[signalPath]?.exports) {
+    return require.cache[signalPath].exports;
+  }
+  return { broadcast: () => {}, markRoomTransitioningToGame: () => {} };
+}
 
 const ROOM_TTL = 7200; // seconds
 const PUBLIC_ROOMS_KEY = 'rooms:public';
@@ -17,6 +32,8 @@ const createRoomSchema = z.object({
   password: z.string().max(64).optional(),
   isPublic: z.boolean().default(true),
   difficulty: z.enum(['normal', 'difficult', 'no_mercy']).default('normal'),
+  world: z.number().int().min(1).max(3).default(1),
+  stage: z.number().int().min(1).max(3).default(1),
 });
 
 const updateRoomSchema = z
@@ -25,6 +42,8 @@ const updateRoomSchema = z
     map: z.string().trim().optional(),
     isPublic: z.boolean().optional(),
     difficulty: z.enum(['normal', 'difficult', 'no_mercy']).optional(),
+    world: z.number().int().min(1).max(3).optional(),
+    stage: z.number().int().min(1).max(3).optional(),
   })
   .refine((payload) => Object.keys(payload).length > 0, {
     message: 'No settings provided',
@@ -41,9 +60,23 @@ function sanitiseRoom(data) {
   const rawCharacters = data.playerCharacters && typeof data.playerCharacters === 'object'
     ? data.playerCharacters
     : {};
+  const rawReady = data.playerReady && typeof data.playerReady === 'object'
+    ? data.playerReady
+    : {};
   const playerCharacters = {};
+  const playerReady = {};
+  const usedRoles = new Set();
   for (const playerId of players) {
-    playerCharacters[playerId] = rawCharacters[playerId] || getRandomCharacterRole();
+    const candidate = rawCharacters[playerId];
+    if (candidate && CHARACTER_ROLES.includes(candidate) && !usedRoles.has(candidate)) {
+      playerCharacters[playerId] = candidate;
+      usedRoles.add(candidate);
+    } else {
+      const assigned = getAvailableCharacterRole([...usedRoles]);
+      playerCharacters[playerId] = assigned;
+      usedRoles.add(assigned);
+    }
+    playerReady[playerId] = Boolean(rawReady[playerId]);
   }
 
   return {
@@ -57,8 +90,12 @@ function sanitiseRoom(data) {
     hasPassword: data.hasPassword,
     isPublic: data.isPublic,
     createdAt: data.createdAt,
-    difficulty: data.difficulty,
+    difficulty: data.difficulty || 'normal',
+    world: Number.isInteger(data.world) && data.world >= 1 && data.world <= 3 ? data.world : 1,
+    stage: Number.isInteger(data.stage) && data.stage >= 1 && data.stage <= 3 ? data.stage : 1,
+    status: data.status || 'lobby',
     playerCharacters,
+    playerReady,
   };
 }
 
@@ -86,8 +123,25 @@ async function roomRoutes(fastify) {
       return reply.status(400).send({ message: 'Validation error', errors: parsed.error.flatten() });
     }
 
-    const { name, map, maxPlayers, password, isPublic, difficulty } = parsed.data;
+    const { name, map, maxPlayers, password, isPublic, difficulty, world, stage } = parsed.data;
     const hostId = request.user.id;
+
+    // Clean up any existing room hosted by this user before creating a new one
+    try {
+      const prevRoomId = await redis.get(`player:${hostId}:room`);
+      if (prevRoomId) {
+        const cleanPipe = redis.pipeline();
+        cleanPipe.del(roomKey(prevRoomId));
+        cleanPipe.del(`room:${prevRoomId}:pwd`);
+        cleanPipe.del(`room:code:${roomCodeFromRoomId(prevRoomId)}`);
+        cleanPipe.zrem(PUBLIC_ROOMS_KEY, prevRoomId);
+        cleanPipe.del(`player:${hostId}:room`);
+        await cleanPipe.exec();
+      }
+    } catch {
+      // ignore cleanup errors
+    }
+
     const id = randomUUID();
     const hasPassword = Boolean(password);
     const createdAt = new Date().toISOString();
@@ -104,11 +158,14 @@ async function roomRoutes(fastify) {
       isPublic,
       createdAt,
       difficulty,
+      world,
+      stage,
     });
 
     const pipeline = redis.pipeline();
     pipeline.set(roomKey(id), JSON.stringify(room), 'EX', ROOM_TTL);
     pipeline.set(`room:code:${roomCodeFromRoomId(id)}`, id, 'EX', ROOM_TTL);
+    pipeline.set(`player:${hostId}:room`, id, 'EX', ROOM_TTL);
 
     if (hasPassword) {
       // Store password separately so it never leaks through the room object
@@ -141,17 +198,35 @@ async function roomRoutes(fastify) {
     }
 
     const results = await pipeline.exec();
+    const staleIds = [];
+    const rooms = [];
 
-    const rooms = results
-      .map(([err, raw]) => {
-        if (err || !raw) return null;
-        try {
-          return JSON.parse(raw);
-        } catch {
-          return null;
+    for (let i = 0; i < ids.length; i++) {
+      const res = results[i];
+      const raw = Array.isArray(res) ? res[1] : res;
+      if (!raw) {
+        staleIds.push(ids[i]);
+        continue;
+      }
+      try {
+        const room = JSON.parse(raw);
+        if (!room || !room.id) {
+          staleIds.push(ids[i]);
+        } else if (room.status !== 'in_game') {
+          rooms.push(room);
         }
-      })
-      .filter(Boolean);
+      } catch {
+        staleIds.push(ids[i]);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      const cleanPipe = redis.pipeline();
+      for (const staleId of staleIds) {
+        cleanPipe.zrem(PUBLIC_ROOMS_KEY, staleId);
+      }
+      await cleanPipe.exec().catch(() => {});
+    }
 
     return reply.send(rooms);
   });
@@ -218,6 +293,7 @@ async function roomRoutes(fastify) {
       hostId: room.hostId,
       players: Array.isArray(room.players) ? room.players : [room.hostId],
       playerCharacters: room.playerCharacters,
+      playerReady: room.playerReady,
       hasPassword: room.hasPassword,
       maxPlayers: room.maxPlayers,
       createdAt: room.createdAt,
@@ -239,6 +315,15 @@ async function roomRoutes(fastify) {
     }
 
     await pipeline.exec();
+
+    const { broadcast: broadcastSignalRoom } = getSignalHelpers();
+    broadcastSignalRoom(roomId, {
+      type: 'room-settings-updated',
+      difficulty: nextRoom.difficulty,
+      world: nextRoom.world,
+      stage: nextRoom.stage,
+      isPublic: nextRoom.isPublic,
+    });
 
     return reply.send(nextRoom);
   });
@@ -477,9 +562,102 @@ async function roomRoutes(fastify) {
     playerCharacters[userId] = role;
     room.playerCharacters = playerCharacters;
 
+    if (room.playerReady && typeof room.playerReady === 'object') {
+      room.playerReady[userId] = false;
+    }
+
     await redis.set(roomKey(roomId), JSON.stringify(room), 'KEEPTTL');
 
-    return reply.send({ playerCharacters });
+    const { broadcast: broadcastSignalRoom } = getSignalHelpers();
+    broadcastSignalRoom(roomId, {
+      type: 'room-character-updated',
+      userId,
+      color: role,
+      playerCharacters,
+      playerReady: room.playerReady || {},
+    });
+
+    return reply.send({
+      playerCharacters,
+      playerReady: room.playerReady || {},
+    });
+  });
+
+  /**
+   * POST /api/rooms/:roomId/ready
+   * Set or toggle player's ready state in the room.
+   */
+  fastify.post('/rooms/:roomId/ready', { preHandler: authenticate }, async (request, reply) => {
+    const { roomId } = request.params;
+
+    if (!/^[0-9a-f-]{36}$/i.test(roomId)) {
+      return reply.status(400).send({ message: 'Invalid roomId' });
+    }
+
+    const isReady = request.body?.isReady !== undefined ? Boolean(request.body.isReady) : true;
+    const userId = request.user.id;
+
+    const raw = await redis.get(roomKey(roomId));
+    if (!raw) return reply.status(404).send({ message: 'Room not found' });
+
+    let room;
+    try {
+      room = JSON.parse(raw);
+    } catch {
+      return reply.status(500).send({ message: 'Corrupted room data' });
+    }
+
+    if (!Array.isArray(room.players) || !room.players.includes(userId)) {
+      return reply.status(403).send({ message: 'Player is not part of this room' });
+    }
+
+    syncPlayerCharacters(room);
+    if (!room.playerReady || typeof room.playerReady !== 'object') {
+      room.playerReady = {};
+    }
+    room.playerReady[userId] = isReady;
+
+    const allReady = room.players.length > 0 && room.players.every((id) => room.playerReady[id] === true);
+    const { broadcast: broadcastSignalRoom, markRoomTransitioningToGame } = getSignalHelpers();
+
+    if (allReady) {
+      room.status = 'in_game';
+      markRoomTransitioningToGame(roomId);
+      await redis.zrem(PUBLIC_ROOMS_KEY, roomId).catch(() => {});
+    }
+
+    await redis.set(roomKey(roomId), JSON.stringify(room), 'KEEPTTL');
+
+    broadcastSignalRoom(roomId, {
+      type: 'room-ready-updated',
+      userId,
+      isReady,
+      playerReady: room.playerReady,
+      playerCharacters: room.playerCharacters,
+      allReady,
+    });
+
+    if (allReady) {
+      broadcastSignalRoom(roomId, {
+        type: 'game-start',
+        roomId,
+        players: room.players,
+        playerCharacters: room.playerCharacters || {},
+        difficulty: room.difficulty || 'normal',
+        world: room.world || 1,
+        stage: room.stage || 1,
+      });
+    }
+
+    return reply.send({
+      playerReady: room.playerReady,
+      playerCharacters: room.playerCharacters,
+      allReady,
+      players: room.players,
+      difficulty: room.difficulty || 'normal',
+      world: room.world || 1,
+      stage: room.stage || 1,
+    });
   });
 
 }

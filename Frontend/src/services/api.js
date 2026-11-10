@@ -161,6 +161,9 @@ export async function getPublicRooms() {
 export async function createRoom({
   name = 'NO MERCY LOBBY',
   map = 'classic',
+  difficulty = 'normal',
+  world = 1,
+  stage = 1,
   maxPlayers = 4,
   password,
   isPublic = true,
@@ -168,7 +171,7 @@ export async function createRoom({
   const res = await fetch(`${API_BASE}/rooms`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ name, map, maxPlayers, password, isPublic }),
+    body: JSON.stringify({ name, map, difficulty, world, stage, maxPlayers, password, isPublic }),
   });
   return handleResponse(res);
 }
@@ -222,6 +225,15 @@ export async function setCharacterColor(roomId, role) {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ role }),
+  });
+  return handleResponse(res);
+}
+
+export async function setPlayerReady(roomId, isReady = true) {
+  const res = await fetch(`${API_BASE}/rooms/${roomId}/ready`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ isReady }),
   });
   return handleResponse(res);
 }

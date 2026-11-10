@@ -35,6 +35,10 @@ class InMemoryRedis {
     return this.store.has(key) || this.zsets.has(key) ? 1 : 0;
   }
 
+  async ttl(key) {
+    return this.store.has(key) || this.zsets.has(key) ? 7200 : -2;
+  }
+
   async zadd(key, score, member) {
     if (!this.zsets.has(key)) this.zsets.set(key, new Map());
     this.zsets.get(key).set(member, Number(score));

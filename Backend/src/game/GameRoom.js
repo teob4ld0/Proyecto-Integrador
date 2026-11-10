@@ -31,8 +31,7 @@ class GameRoom {
   constructor(roomId, hostId, options = {}) {
     this.roomId        = roomId;
     this.hostId        = hostId;
-    /** @type {'lobby'|'ready'|'countdown'|'playing'} */
-    this.phase         = 'playing';
+    /** @type {'loading'|'ready'|'countdown'|'playing'} */
     this.players       = new Map();
     this.bulletSystem  = new BulletSystem();
     this.laserSystem   = new LaserSystem();
@@ -40,13 +39,16 @@ class GameRoom {
     this.enemySystem   = new EnemySystem();
     this.itemSystem    = new ItemSystem();
     this.timeline      = new TimelineManager();
-    this.campaign      = new CampaignManager(options.difficulty);
+    this.campaign      = new CampaignManager(options.difficulty, options.world, options.stage);
     this.boss          = new BossController();
     this.world         = createWorld();
     this.tick          = 0;
     this.stageTime     = 0;
     this._countdownMs  = 0;
-    this._phaseController = new RoomPhaseController();
+    this._phaseController = new RoomPhaseController({
+      initialPhase: options.initialPhase || 'loading',
+      expectedPlayerCount: options.expectedPlayerCount || 1,
+    });
     this._beamStruggleController = new BeamStruggleAuthority();
     // Kept for compatibility with existing reads in case anything still peeks internals.
     this._beamStruggle = this._beamStruggleController.state;
@@ -63,6 +65,63 @@ class GameRoom {
 
     // Setup timeline for the current stage
     this._setupTimeline();
+  }
+
+  spawnBossNow() {
+    this.enemySystem.clear();
+    this.bulletSystem.clearByOwner('boss');
+    this.campaign.stageState = 'boss_battle';
+    this.boss.spawn(700, 300);
+    this.boss._introProgress = 1.0;
+    this.boss.x = 700;
+    this.boss.y = 300;
+    this.boss.isRefilling = false;
+    this.boss.isInvulnerable = false;
+    for (const ev of this.timeline.events) {
+      ev.executed = true;
+    }
+  }
+
+  startBeamStruggleTest(playerId) {
+    if (!this.boss.isActive || this.boss.isDefeated) {
+      this.spawnBossNow();
+    }
+    this.bulletSystem.clear();
+    this.laserSystem.lasers = [];
+    this._beamStruggleController.reset();
+
+    const targetPlayer = (playerId && this.players.get(playerId)) || [...this.players.values()].find((p) => p.active);
+    if (!targetPlayer) return;
+
+    const targetId = (playerId && this.players.has(playerId)) ? playerId : [...this.players.keys()][0];
+    targetPlayer.body.setPosition({ x: 130, y: 300 });
+    targetPlayer.body.setLinearVelocity({ x: 0, y: 0 });
+    this.boss.x = 670;
+    this.boss.y = 300;
+    this.boss.targetX = 670;
+    this.boss.targetY = 300;
+    this.boss.isLockedForBeam = true;
+
+    this.laserSystem.spawnLaser(150, 300, 300, {
+      ownerId: targetId,
+      direction: 'right',
+      chargeDuration: 0.25,
+      fireDuration: 4.5,
+      fadeDuration: 0.4,
+      maxWidth: 68,
+      color: 0x00f2fe,
+      dps: 50,
+    });
+    this.laserSystem.spawnLaser(650, 300, 300, {
+      ownerId: 'boss',
+      direction: 'left',
+      chargeDuration: 0.25,
+      fireDuration: 4.5,
+      fadeDuration: 0.4,
+      maxWidth: 68,
+      color: 0xff2b5b,
+      dps: 50,
+    });
   }
 
   _setupTimeline() {
@@ -104,11 +163,25 @@ class GameRoom {
       skillCooldown: 0,
       active:        true,
       isReady:       false,
+      isLoaded:      false,
       character:     resolvedCharacter,
       stats,
       hp:            stats.hpMax,
-      sp:            0,
+      sp:            stats.spMax,
     });
+  }
+
+  get phase() {
+    return this._phaseController.phase;
+  }
+
+  set phase(nextPhase) {
+    this._phaseController.phase = nextPhase;
+    if (nextPhase === 'playing') {
+      this._phaseController.countdownMs = 0;
+      this._phaseController._loadingDeadlineMs = null;
+      this._phaseController._readyDeadlineMs = null;
+    }
   }
 
   removePlayer(playerId) {
@@ -123,6 +196,7 @@ class GameRoom {
     if (player) {
       player.active  = false;
       player.isReady = false;
+      player.isLoaded = false;
       player.input   = { dx: 0, dy: 0, action: null };
     }
   }
@@ -135,7 +209,20 @@ class GameRoom {
     }
   }
 
+  setExpectedPlayerCount(count) {
+    this._phaseController.setExpectedPlayerCount(count);
+  }
+
   // ── Phase transitions ────────────────────────────────────────────────────────
+
+  /**
+   * Mark a player as loaded/ready after client assets are initialized.
+   */
+  setPlayerLoaded(playerId) {
+    const nextPhase = this._phaseController.setPlayerLoaded(playerId, this.players);
+    this._syncPhaseState();
+    return nextPhase;
+  }
 
   /**
    * Host triggers the ready check. Returns true if the transition succeeded.
@@ -155,6 +242,15 @@ class GameRoom {
     return nextPhase;
   }
 
+  getReadyStatus() {
+    return [...this.players.entries()].map(([id, p]) => ({
+      id,
+      isReady: Boolean(p.isReady),
+      isLoaded: Boolean(p.isLoaded),
+      character: p.character,
+    }));
+  }
+
   /**
    * Cancel an ongoing ready/countdown and return to lobby.
    */
@@ -164,7 +260,6 @@ class GameRoom {
   }
 
   _syncPhaseState() {
-    this.phase = this._phaseController.phase;
     this._countdownMs = this._phaseController.countdownMs;
   }
 
@@ -222,7 +317,7 @@ class GameRoom {
       for (const [, p] of this.players) {
         if (p.active && p.hp > 0) {
           const stats = p.stats || DEFAULT_PLAYER_STATS;
-          p.sp = Math.min(stats.spMax, p.sp + 25);
+          p.sp = Math.min(stats.spMax, p.sp + 60);
         }
       }
     }
@@ -271,14 +366,25 @@ class GameRoom {
         if (!player || player.hp <= 0) continue;
         this.applyDamageToPlayer(player, hit.damage || 0);
       }
-      // Player lasers vs boss
-      if (this.boss.isActive && !this.boss.isDefeated) {
-        for (const laser of this.laserSystem.lasers) {
-          if (laser.ownerId === 'boss' || laser.state !== 'firing') continue;
-          // Simple hit check: is boss within laser's horizontal range and vertical width
-          const beamHalfW = (laser.currentWidth || laser.maxWidth) / 2;
+      // Player lasers vs boss and intermediate enemies
+      for (const laser of this.laserSystem.lasers) {
+        if (laser.ownerId === 'boss' || laser.state !== 'firing') continue;
+        const beamHalfW = (laser.currentWidth || laser.maxWidth) / 2;
+        if (this.boss.isActive && !this.boss.isDefeated) {
           if (this.boss.x >= laser.sourceX && Math.abs(this.boss.y - laser.sourceY) < beamHalfW + 40) {
             this.boss.takeDamage(deltaTime * 60); // ~1 dmg per frame at 60fps
+          }
+        }
+        for (let i = this.enemySystem.active.length - 1; i >= 0; i--) {
+          const e = this.enemySystem.active[i];
+          if (e.isDead) continue;
+          if (e.x >= laser.sourceX && Math.abs(e.y - laser.sourceY) < beamHalfW + e.radius) {
+            e.hp -= deltaTime * 80;
+            if (e.hp <= 0) {
+              e.isDead = true;
+              this.itemSystem.spawnItem(e.x, e.y, e.itemDrop);
+              this.enemySystem.active.splice(i, 1);
+            }
           }
         }
       }
@@ -308,9 +414,25 @@ class GameRoom {
     return { x: totalX / count, y: totalY / count };
   }
 
+  _getAutoAimTargets() {
+    const targets = [];
+    for (const e of this.enemySystem.active) {
+      if (!e.isDead && e.hp > 0) {
+        targets.push({ x: e.x, y: e.y, hp: e.hp });
+      }
+    }
+    if (this.boss.isActive && !this.boss.isDefeated && this.boss.hp > 0) {
+      targets.push({ x: this.boss.x, y: this.boss.y, hp: this.boss.hp });
+    }
+    if (targets.length === 0) {
+      targets.push({ x: this.boss.x || 700, y: this.boss.y || 300, hp: 100 });
+    }
+    return targets;
+  }
+
   _updatePlayerActor(id, player, deltaTime) {
     if (!(player.active && player.hp > 0)) {
-      if (player.hp <= 0) player.input = { dx: 0, dy: 0, action: null };
+      if (player.hp <= 0) player.input = { dx: 0, dy: 0, action: null, focus: false };
       player.body.setLinearVelocity({ x: 0, y: 0 });
       return;
     }
@@ -326,9 +448,12 @@ class GameRoom {
     const normClass = normalizeClassId(player.character);
     const shootCooldown = 1 / Math.max(0.1, stats.shotsPerSecond || 5);
 
+    // Passive SP regeneration so tactical class skills remain usable across waves
+    player.sp = Math.min(stats.spMax, player.sp + deltaTime * 45);
+
     if (action === 'shoot' && player.shootCooldown <= 0) {
       if (normClass === 'support' || normClass === 'healer') {
-        const targets = [{ x: this.boss.x, y: this.boss.y }];
+        const targets = this._getAutoAimTargets();
         spawnAutoAimBullet(this.bulletSystem, id, pos.x + 16, pos.y, targets, 650, 4, 2.5, stats.bulletDamage, 'autoaim');
       } else if (normClass === 'tank' || normClass === 'defense') {
         this.bulletSystem.spawnBullet(id, pos.x + 16, pos.y, 600, 0, 5, 2.5, 'normal', stats.bulletDamage);
@@ -343,15 +468,18 @@ class GameRoom {
       player.shootCooldown = shootCooldown;
     }
 
-    const canUseSkill = player.skillCooldown <= 0 && player.sp >= stats.spMax;
+    const wallCost = Math.min(250, stats.spMax);
+    const laserCost = Math.min(500, stats.spMax);
+    const supportCost = Math.min(400, stats.spMax);
+    const dpsCost = Math.min(350, stats.spMax);
 
-    if ((action === 'wall' || ((normClass === 'tank' || normClass === 'defense') && action === 'special')) && canUseSkill) {
+    if ((action === 'wall' || ((normClass === 'tank' || normClass === 'defense') && action === 'special')) && player.skillCooldown <= 0 && player.sp >= wallCost) {
       this.wallSystem.spawnWall(id, pos.x + 24, pos.y, 40, 0, 14, 48, 25, 1.0);
       player.skillCooldown = SKILL_COOLDOWN;
-      player.sp = 0;
+      player.sp = Math.max(0, player.sp - wallCost);
     }
 
-    if ((action === 'laser' || ((normClass === 'special_attack' || normClass === 'attack') && action === 'special')) && canUseSkill) {
+    if ((action === 'laser' || ((normClass === 'special_attack' || normClass === 'attack') && action === 'special')) && player.skillCooldown <= 0 && player.sp >= laserCost) {
       this.laserSystem.spawnLaser(pos.x + 16, pos.y, pos.y, {
         ownerId: id,
         direction: 'right',
@@ -362,7 +490,32 @@ class GameRoom {
         color: 0x00f0ff,
       });
       player.skillCooldown = SKILL_COOLDOWN * 2;
-      player.sp = 0;
+      player.sp = Math.max(0, player.sp - laserCost);
+    }
+
+    if ((normClass === 'support' || normClass === 'healer') && action === 'special' && player.skillCooldown <= 0 && player.sp >= supportCost) {
+      const targets = this._getAutoAimTargets();
+      for (const offsetY of [-18, -10, -4, 4, 10, 18]) {
+        spawnAutoAimBullet(this.bulletSystem, id, pos.x + 16, pos.y + offsetY, targets, 700, 5, 2.8, stats.bulletDamage * 1.5, 'autoaim');
+      }
+      for (const [, ally] of this.players) {
+        if (ally.active && ally.hp > 0) {
+          const allyStats = ally.stats || DEFAULT_PLAYER_STATS;
+          ally.hp = Math.min(allyStats.hpMax, ally.hp + 25);
+        }
+      }
+      player.skillCooldown = SKILL_COOLDOWN * 1.5;
+      player.sp = Math.max(0, player.sp - supportCost);
+    }
+
+    if ((normClass === 'dps' || normClass === 'physical') && action === 'special' && player.skillCooldown <= 0 && player.sp >= dpsCost) {
+      for (const angleOffset of [-0.21, -0.14, -0.07, -0.02, 0.02, 0.07, 0.14, 0.21]) {
+        const vx = Math.cos(angleOffset) * 840;
+        const vy = Math.sin(angleOffset) * 840;
+        this.bulletSystem.spawnBullet(id, pos.x + 18, pos.y, vx, vy, 5, 2.5, 'normal', stats.bulletDamage * 2);
+      }
+      player.skillCooldown = SKILL_COOLDOWN;
+      player.sp = Math.max(0, player.sp - dpsCost);
     }
 
     applyInput(player.body, player.input);
@@ -384,16 +537,16 @@ class GameRoom {
       const stats = player.stats || DEFAULT_PLAYER_STATS;
       switch (pickup.type) {
         case 'power':
-          player.sp = Math.min(stats.spMax, player.sp + 20);
+          player.sp = Math.min(stats.spMax, player.sp + 45);
           break;
         case 'point':
-          player.sp = Math.min(stats.spMax, player.sp + 10);
+          player.sp = Math.min(stats.spMax, player.sp + 25);
           break;
         case 'bomb_frag':
-          player.sp = Math.min(stats.spMax, player.sp + 50);
+          player.sp = Math.min(stats.spMax, player.sp + 150);
           break;
         case 'life_frag':
-          player.hp = Math.min(stats.hpMax, player.hp + 20);
+          player.hp = Math.min(stats.hpMax, player.hp + 25);
           break;
       }
     }
@@ -414,7 +567,7 @@ class GameRoom {
       const owner = this.players.get(b.ownerId);
       if (owner && owner.hp > 0) {
         const stats = owner.stats || DEFAULT_PLAYER_STATS;
-        owner.sp = Math.min(stats.spMax, owner.sp + (stats.spChargePerHit || 0));
+        owner.sp = Math.min(stats.spMax, owner.sp + Math.max(8, stats.spChargePerHit || 0));
       }
 
       this.boss.takeDamage(damage * 0.08);
@@ -434,28 +587,46 @@ class GameRoom {
     if (!this.campaign.hasNextStage()) return false;
     if (!this.campaign.advanceToNextStage()) return false;
 
-    // Reset all systems
+    this._resetStageRuntime();
+    return true;
+  }
+
+  /**
+   * Restart the current stage (e.g. after squad wipe or retry).
+   */
+  restartStage() {
+    this.campaign.stageState = 'intro';
+    this._resetStageRuntime();
+    let idx = 0;
+    for (const [, player] of this.players) {
+      const stats = player.stats || DEFAULT_PLAYER_STATS;
+      player.hp = stats.hpMax;
+      player.sp = stats.spMax;
+      player.shootCooldown = 0;
+      player.skillCooldown = 0;
+      const spawn = SPAWN_POSITIONS[idx % SPAWN_POSITIONS.length];
+      player.body.setPosition({ x: spawn.x, y: spawn.y });
+      player.body.setLinearVelocity({ x: 0, y: 0 });
+      idx++;
+    }
+  }
+
+  _resetStageRuntime() {
     this.bulletSystem = new BulletSystem();
+    this.laserSystem = new LaserSystem();
+    this.wallSystem = new WallSystem();
     this.enemySystem.clear();
     this.itemSystem.clear();
     this.boss.reset();
     this.timeline.reset();
     this.stageTime = 0;
-
-    // Reload timeline for new stage
     this._setupTimeline();
-    return true;
   }
 
   // ── Snapshot ─────────────────────────────────────────────────────────────────
 
   getState() {
     return buildRoomSnapshot(this, { fallbackStats: DEFAULT_PLAYER_STATS });
-  }
-
-  /** Serialise ready state for broadcasting. */
-  getReadyStatus() {
-    return [...this.players.entries()].map(([id, p]) => ({ id, isReady: p.isReady }));
   }
 
   applyDamageToPlayer(player, rawDamage) {

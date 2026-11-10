@@ -1,15 +1,24 @@
 # ========================
-# Archivos de Node.js (¡Lo más importante!)
+# Node.js
 # ========================
 node_modules/
-package-lock.json # Opcional: Descomenta esto solo si no quieres subir el lockfile, aunque se recomienda subirlo.
 
 # ========================
-# Build outputs (Frontend de Vite)
+# Build outputs (Vite / TypeScript)
 # ========================
+dist/
+dist-ssr/
 Frontend/dist/
 Frontend/dist-ssr/
 *.tsbuildinfo
+
+# ========================
+# Base de datos local (SQLite + WAL)
+# ========================
+*.db
+*.db-shm
+*.db-wal
+Backend/data/
 
 # ========================
 # Archivos sensibles y Entorno
@@ -17,9 +26,6 @@ Frontend/dist-ssr/
 .env
 .env.*
 !.env.example
-Backend/appsettings.json
-Backend/appsettings.*.json
-!Backend/appsettings.Example.json
 
 # ========================
 # Logs y temporales
@@ -32,19 +38,13 @@ yarn-error.log*
 *.swp
 
 # ========================
-# Sistema Operativo (Archivos basura de Windows/Mac)
+# Sistema Operativo (Windows / macOS)
 # ========================
 .DS_Store
 Thumbs.db
 
 # ========================
-# Build outputs antiguos (.NET)
-# ========================
-Backend/bin/
-Backend/obj/
-
-# ========================
-# Editores y Entornos (VS, VS Code, Rider)
+# Editores y Entornos (VS Code, JetBrains, VS)
 # ========================
 .vscode/
 .vs/
